@@ -1,0 +1,32 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train",
+            "type": "python",
+            "request": "launch",
+            "module": "parviflora.train",
+            "justMyCode": true,
+            "args": []
+        },
+        {
+            "name": "Test",
+            "type": "python",
+            "request": "launch",
+            "module": "parviflora.run",
+            "justMyCode": true,
+            "args": ["test_policy", "data/pendulum/pendulum_s0"]
+        },
+        {
+            "name": "Plot",
+            "type": "python",
+            "request": "launch",
+            "module": "parviflora.run",
+            "justMyCode": true,
+            "args": ["plot", "data/pendulum/pendulum_s0"]
+        }
+    ]
+}
