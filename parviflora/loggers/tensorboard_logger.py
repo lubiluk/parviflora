@@ -2,10 +2,10 @@ from typing import Optional
 
 from torch.utils.tensorboard import SummaryWriter
 
-from .training_logger import TrainingLogger
+from .base_logger import BaseLogger
 
 
-class TensorboardLogger(TrainingLogger):
+class TensorboardLogger(BaseLogger):
     def __enter__(self):
         self.writer = SummaryWriter()
         return self

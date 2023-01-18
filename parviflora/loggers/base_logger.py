@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
-class TrainingLogger(ABC):
+class BaseLogger(ABC):
     @abstractmethod
     def __enter__(self):
         ...

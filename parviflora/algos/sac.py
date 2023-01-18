@@ -10,10 +10,11 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from tqdm import trange
 
+from ..buffers.base_buffer import BaseBuffer
 from ..buffers.replay_buffer import ReplayBuffer
-from ..loggers.training_logger import TrainingLogger
+from ..loggers.base_logger import BaseLogger
 from ..loggers.silent_logger import SilentLogger
-from ..policies.mlp_policy import MLPActorCritic
+from ..policies.mlp_policy import MlpPolicy
 from ..utils.training import count_vars
 
 
@@ -23,9 +24,9 @@ class SAC:
     def __init__(
         self,
         env,
-        actor_critic=MLPActorCritic,
-        replay_buffer=ReplayBuffer,
+        actor_critic_type=MlpPolicy,
         ac_kwargs=dict(),
+        replay_buffer_type: BaseBuffer = ReplayBuffer,
         rb_kwargs=dict(),
         seed=0,
         gamma=0.99,
@@ -42,7 +43,7 @@ class SAC:
         num_updates=None,
         use_gpu_buffer=True,
         use_gpu_computation=True,
-        logger: TrainingLogger = SilentLogger(),
+        logger: BaseLogger = SilentLogger(),
     ):
         """
         Soft Actor-Critic (SAC)
@@ -159,13 +160,11 @@ class SAC:
         self.ent_coef = ent_coef
         self.ent_coef_optimizer = None
 
-        act_dim = env.action_space.shape[0]
-
         # Action limit for clamping: critically, assumes all dimensions share the same bound!
         self.act_limit = env.action_space.high[0]
 
         # Create actor-critic module and target networks
-        self.ac = actor_critic(
+        self.ac = actor_critic_type(
             env.observation_space, env.action_space, device=comp_device, **ac_kwargs
         )
         self.ac_targ = deepcopy(self.ac)
@@ -180,9 +179,7 @@ class SAC:
         )
 
         # Experience buffer
-        self.buffer = replay_buffer(
-            obs_space=env.observation_space,
-            act_dim=act_dim,
+        self.buffer = replay_buffer_type(
             env=env,
             device=buff_device,
             **rb_kwargs,
@@ -229,21 +226,26 @@ class SAC:
                 torch.ones(1, device=comp_device) * init_value
             ).requires_grad_(True)
             self.ent_coef_optimizer = torch.optim.Adam([self.log_ent_coef], lr=lr)
-            self.ent_coef = torch.tensor(float(init_value)).to(comp_device)
+            self.ent_coef = torch.tensor(
+                float(init_value), dtype=torch.float32, device=comp_device
+            )
         else:
             # Force conversion to float
             # this will throw an error if a malformed string (different from 'auto')
             # is passed
-            self.ent_coef = torch.tensor(float(self.ent_coef)).to(comp_device)
+            self.ent_coef = torch.tensor(
+                float(self.ent_coef), dtype=torch.float32, device=comp_device
+            )
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
-        o, a, r, o2, d = (
-            data["obs"],
-            data["act"],
-            data["rew"],
-            data["obs2"],
-            data["done"],
+        o, a, r, o2, ter, tru = (
+            data["observation"],
+            data["action"],
+            data["reward"],
+            data["next_observation"],
+            data["terminated"],
+            data["truncated"],
         )
 
         q1 = self.ac.q1(o, a)
@@ -258,7 +260,7 @@ class SAC:
             q1_pi_targ = self.ac_targ.q1(o2, a2)
             q2_pi_targ = self.ac_targ.q2(o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = r + self.gamma * (1 - d) * (q_pi_targ - self.ent_coef * logp_a2)
+            backup = r + self.gamma * (1 - ter) * (q_pi_targ - self.ent_coef * logp_a2)
 
         # MSE loss against Bellman backup
         loss_q1 = F.mse_loss(q1, backup)
@@ -274,7 +276,7 @@ class SAC:
 
     # Set up function for computing SAC pi loss
     def compute_loss_pi(self, data):
-        o = data["obs"]
+        o = data["observation"]
         pi, logp_pi = self.ac.pi(o)
         q1_pi = self.ac.q1(o, pi)
         q2_pi = self.ac.q2(o, pi)
@@ -349,7 +351,9 @@ class SAC:
         a = self.ac.act(o, deterministic)
         return np.clip(a, -self.act_limit, self.act_limit)
 
-    def test(self, env: gym.Env, n_episodes: int) -> float:
+    def test(
+        self, env: gym.Env, n_episodes: int, sleep: float = 0
+    ) -> Tuple[float, float]:
         ep_returns = []
         ep_lengths = []
         self.ac.eval()
@@ -359,6 +363,8 @@ class SAC:
             while not (d or (ep_len == self.max_ep_len)):
                 # Take deterministic actions at test time
                 o, r, ter, tru, i = env.step(self.get_action(o, True))
+                if sleep > 0:
+                    time.sleep(sleep)
                 d = ter or tru
                 ep_ret += r
                 ep_len += 1
@@ -387,24 +393,18 @@ class SAC:
 
                 # Step the env
                 o2, r, ter, tru, i = self.env.step(a)
-                d = ter or tru
                 ep_ret += r
                 ep_len += 1
 
-                # Ignore the "done" signal if it comes from hitting the time
-                # horizon (that is, when it"s an artificial terminal signal
-                # that isn"t based on the agent"s state)
-                d = False if ep_len == self.max_ep_len else d
-
                 # Store experience to replay buffer
-                self.buffer.store(o, a, r, o2, d, i)
+                self.buffer.store(o, a, r, o2, ter, tru, i)
 
                 # Super critical, easy to overlook step: make sure to update
                 # most recent observation!
                 o = o2
 
                 # End of trajectory handling
-                if d or (ep_len == self.max_ep_len):
+                if (ter or tru) or (ep_len == self.max_ep_len):
                     self.logger.log_scalar("ep_return", ep_ret, t)
                     self.logger.log_scalar("ep_length", ep_len, t)
                     self.buffer.end_episode()

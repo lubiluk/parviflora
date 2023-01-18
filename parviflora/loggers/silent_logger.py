@@ -1,9 +1,9 @@
 from typing import Optional
 
-from .training_logger import TrainingLogger
+from .base_logger import BaseLogger
 
 
-class SilentLogger(TrainingLogger):
+class SilentLogger(BaseLogger):
     def __enter__(self):
         return self
 

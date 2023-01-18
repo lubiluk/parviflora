@@ -1,9 +1,15 @@
+from typing import Iterable, Type, Union
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from numpy.typing import NDArray
 from torch.distributions.normal import Normal
 
+from ..utils.observation import unsqueeze_observation
+
+from ..extractors.array_extractor import ArrayExtractor
+from ..extractors.base_extractor import BaseExtractor
 from ..models.mlp import mlp
 
 LOG_STD_MAX = 2
@@ -12,12 +18,21 @@ LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
     def __init__(
-        self, obs_dim, act_dim, hidden_sizes, activation, act_limit, device=None
+        self,
+        extractor: BaseExtractor,
+        act_dim: int,
+        hidden_sizes: Iterable[int],
+        activation: Type[nn.Module],
+        act_limit: float,
+        device: torch.device = None,
     ):
-        super(SquashedGaussianMLPActor, self).__init__()
+        super().__init__()
+        self.extractor = extractor
         self.device = device
 
-        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
+        self.net = mlp(
+            [extractor.n_features] + list(hidden_sizes), activation, activation
+        )
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
@@ -28,7 +43,7 @@ class SquashedGaussianMLPActor(nn.Module):
             self.log_std_layer.to(device)
 
     def forward(self, obs, deterministic=False, with_logprob=True):
-        obs = obs.to(self.device)
+        obs = self.extractor(obs)
 
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
@@ -64,54 +79,63 @@ class SquashedGaussianMLPActor(nn.Module):
 
 
 class MLPQFunction(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, device=None):
-        super(MLPQFunction, self).__init__()
+    def __init__(
+        self,
+        extractor: BaseExtractor,
+        act_dim: int,
+        hidden_sizes: Iterable[int],
+        activation: Type[nn.Module],
+        device: torch.device = None,
+    ):
+        super().__init__()
+        self.extractor = extractor
         self.device = device
 
-        self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp(
+            [extractor.n_features + act_dim] + list(hidden_sizes) + [1], activation
+        )
 
         if device:
             self.q.to(device)
 
     def forward(self, obs, act):
-        obs = obs.to(self.device)
+        obs = self.extractor(obs)
         act = act.to(self.device)
 
         q = self.q(torch.cat([obs, act], dim=-1))
         return torch.squeeze(q, -1)  # Critical to ensure q has right shape.
 
 
-class MLPActorCritic(nn.Module):
+class MlpPolicy(nn.Module):
     def __init__(
         self,
         observation_space,
         action_space,
         hidden_sizes=(256, 256),
         activation=nn.ReLU,
+        extractor_type: BaseExtractor = ArrayExtractor,
         device=None,
     ):
-        super(MLPActorCritic, self).__init__()
+        super().__init__()
 
         self.device = device
+        self.extractor: BaseExtractor = extractor_type(observation_space, device=device)
 
-        obs_dim = observation_space.shape[0]
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
         # build policy and value functions
         self.pi = SquashedGaussianMLPActor(
-            obs_dim, act_dim, hidden_sizes, activation, act_limit, device=device
+            self.extractor, act_dim, hidden_sizes, activation, act_limit, device=device
         )
         self.q1 = MLPQFunction(
-            obs_dim, act_dim, hidden_sizes, activation, device=device
+            self.extractor, act_dim, hidden_sizes, activation, device=device
         )
         self.q2 = MLPQFunction(
-            obs_dim, act_dim, hidden_sizes, activation, device=device
+            self.extractor, act_dim, hidden_sizes, activation, device=device
         )
 
-    def act(self, obs, deterministic=False):
-        obs = torch.as_tensor(obs, dtype=torch.float32)
-
+    def act(self, obs: Union[NDArray, dict[str, NDArray]], deterministic=False):
         with torch.no_grad():
-            a, _ = self.pi(obs.unsqueeze(dim=0), deterministic, False)
+            a, _ = self.pi(unsqueeze_observation(obs), deterministic, False)
             return a.squeeze(dim=0).cpu().numpy()
