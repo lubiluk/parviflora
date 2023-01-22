@@ -1,10 +1,11 @@
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import gymnasium as gym
 import numpy as np
 import torch
-from torch import Tensor
 from numpy.typing import NDArray
+from torch import Tensor
+from pandas import DataFrame
 
 from ..buffers.base_buffer import BaseBuffer
 from ..utils.shape import combined_shape
@@ -16,9 +17,12 @@ class ReplayBuffer(BaseBuffer):
     """
 
     def __init__(
-        self, env: gym.Env, size: int = 100000, device: Optional[torch.device] = None
+        self,
+        env: gym.Env,
+        size: int = 100000,
+        device: torch.device = torch.device("cpu"),
     ):
-        self.device = device
+        super().__init__(env=env, size=size, device=device)
 
         obs_space = combined_shape(size, env.observation_space.shape)
 
@@ -32,52 +36,37 @@ class ReplayBuffer(BaseBuffer):
             dtype=torch.float32,
             device=device,
         )
-        self.actions = torch.zeros(
-            combined_shape(size, env.action_space.shape),
-            dtype=torch.float32,
-            device=device,
-        )
-        self.rewards = torch.zeros(size, dtype=torch.float32, device=device)
-        self.terminations = torch.zeros(size, dtype=torch.float32, device=device)
-        self.truncations = torch.zeros(size, dtype=torch.float32, device=device)
-        self.infos = np.empty((size, 1), dtype=object)
-        self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(
+    def _store_observations(
         self,
         observation: NDArray,
-        action: NDArray,
-        reward: float,
         next_observation: NDArray,
-        terminated: bool,
-        truncated: bool,
-        info: dict[str, Any],
     ) -> None:
-        self.observations[self.ptr] = torch.as_tensor(observation, dtype=torch.float32)
-        self.next_observations[self.ptr] = torch.as_tensor(
+        self.observations[self._ptr] = torch.as_tensor(observation, dtype=torch.float32)
+        self.next_observations[self._ptr] = torch.as_tensor(
             next_observation, dtype=torch.float32
         )
-        self.actions[self.ptr] = torch.as_tensor(action, dtype=torch.float32)
-        self.rewards[self.ptr] = torch.as_tensor(reward, dtype=torch.float32)
-        self.terminations[self.ptr] = torch.as_tensor(terminated, dtype=torch.float32)
-        self.truncations[self.ptr] = torch.as_tensor(truncated, dtype=torch.float32)
-        self.infos[self.ptr] = info
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
 
-    def _get_batch(self, idxs: Tensor) -> dict[str, Tensor]:
+    def _observations_batch(self, idxs: Tensor) -> dict[str, Tensor]:
         return dict(
             observation=self.observations[idxs],
             next_observation=self.next_observations[idxs],
-            action=self.actions[idxs],
-            reward=self.rewards[idxs],
-            terminated=self.terminations[idxs],
-            truncated=self.truncations[idxs],
-            info=self.infos[idxs],
         )
 
-    def start_episode(self):
-        pass
+    def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
+        names = []
+        data = []
 
-    def end_episode(self):
-        pass
+        names.append(f"observation")
+        data.append(self.observations.numpy())
+
+        names.append(f"next_observations")
+        data.append(self.next_observations.numpy())
+
+        return names, data
+
+    def _load_observations(self, df: DataFrame) -> None:
+        self.observations = torch.from_numpy(df["observations"], dtype=torch.float32)
+        self.next_observations = torch.from_numpy(
+            df["next_observations"], dtype=torch.float32
+        )

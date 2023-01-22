@@ -24,25 +24,21 @@ class SAC:
     def __init__(
         self,
         env,
-        actor_critic_type=MlpPolicy,
-        ac_kwargs=dict(),
-        replay_buffer_type: BaseBuffer = ReplayBuffer,
-        rb_kwargs=dict(),
+        policy: MlpPolicy,
+        buffer: BaseBuffer,
         seed=0,
         gamma=0.99,
         polyak=0.995,
         lr=1e-3,
-        ent_coef="auto",
+        alpha="auto",
         target_entropy="auto",
         batch_size=100,
         start_steps=10000,
         update_after=1000,
         update_every=50,
         n_test_episodes=10,
-        max_ep_len=1000,
-        num_updates=None,
-        use_gpu_buffer=True,
-        use_gpu_computation=True,
+        max_episode_len=1000,
+        n_updates=None,
         logger: BaseLogger = SilentLogger(),
     ):
         """
@@ -50,7 +46,7 @@ class SAC:
         Args:
             env_fn : A function which creates a copy of the environment.
                 The environment must satisfy the OpenAI Gym API.
-            actor_critic: The constructor method for a PyTorch Module with an ``act``
+            policy: The constructor method for a PyTorch Module with an ``act``
                 method, a ``pi`` module, a ``q1`` module, and a ``q2`` module.
                 The ``act`` method and ``pi`` module should accept batches of
                 observations as inputs, and ``q1`` and ``q2`` should accept a batch
@@ -80,13 +76,11 @@ class SAC:
                                             | actions in ``a``. Importantly: gradients
                                             | should be able to flow back into ``a``.
                 ===========  ================  ======================================
-            ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object
+            policy_kwargs (dict): Any kwargs appropriate for the Policy object
                 you provided to SAC.
+            buffer (BaseBuffer): Maximum length of replay buffer.
+            buffer_kwargs (dict):  Any kwargs appropriate for the Buffer object
             seed (int): Seed for random number generators.
-            steps_per_epoch (int): Number of steps of interaction (state-action pairs)
-                for the agent and the environment in each epoch.
-            epochs (int): Number of epochs to run and train agent.
-            replay_size (int): Maximum length of replay buffer.
             gamma (float): Discount factor. (Always between 0 and 1.)
             polyak (float): Interpolation factor in polyak averaging for target
                 networks. Target networks are updated towards main networks
@@ -96,7 +90,7 @@ class SAC:
                 where :math:`\\rho` is polyak. (Always between 0 and 1, usually
                 close to 1.)
             lr (float): Learning rate (used for both policy and value learning).
-            ent_coef (float): Entropy regularization coefficient. (Equivalent to
+            alpha (float): Entropy regularization coefficient. (Equivalent to
                 inverse of reward scale in the original SAC paper.)
             batch_size (int): Minibatch size for SGD.
             start_steps (int): Number of steps for uniform-random action selection,
@@ -108,37 +102,16 @@ class SAC:
                 between gradient descent updates. Note: Regardless of how long
                 you wait between updates, the ratio of env steps to gradient steps
                 is locked to 1.
-            num_test_episodes (int): Number of episodes to test the deterministic
+            n_test_episodes (int): Number of episodes to test the deterministic
                 policy at the end of each epoch.
-            max_ep_len (int): Maximum length of trajectory / episode / rollout.
-            logger_kwargs (dict): Keyword args for EpochLogger.
-            save_freq (int): How often (in terms of gap between epochs) to save
-                the current policy and value function.
-            num_updates (int): The number of updates per `update_every`,
+            max_episode_len (int): Maximum length of trajectory / episode / rollout.
+            n_updates (int): The number of updates per `update_every`,
                 by default it is the same as save_freq
-            use_gpu_buffer (bool): Whether or not to store replay buffer in GPU memory
-            use_gpu_computation (bool): Whether or not to store computation graph on GPU memory
+            gpu_buffer (bool): Whether or not to store replay buffer in GPU memory
+            gpu_computation (bool): Whether or not to store computation graph on GPU memory
+            logger (BaseLogger): Logger to use
         """
-        # config = locals()
-        # config["env"] = str(config["env"])
-        # config["self"] = "SAC"
-        # # self.logger.save_config(config)
-
-        buff_device = torch.device("cpu")
-        comp_device = torch.device("cpu")
-
         self.logger = logger
-
-        if torch.cuda.is_available():
-            if use_gpu_buffer:
-                buff_device = torch.device("cuda")
-                self.logger.log_msg("\nUsing GPU replay buffer\n")
-
-            if use_gpu_computation:
-                comp_device = torch.device("cuda")
-                self.logger.log_msg("\nUsing GPU computaion\n")
-        else:
-            self.logger.log_msg("\nGPU unavailable\n")
 
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -147,54 +120,46 @@ class SAC:
         self.gamma = gamma
         self.polyak = polyak
         self.n_test_episodes = n_test_episodes
-        self.max_ep_len = max_ep_len
+        self.max_episode_len = max_episode_len
         self.start_steps = start_steps
         self.update_after = update_after
         self.update_every = update_every
-        self.num_updates = num_updates
+        self.n_updates = n_updates
         self.batch_size = batch_size
         self.target_entropy = target_entropy
-        self.log_ent_coef: Optional[torch.Tensor] = None
+        self.log_alpha: Optional[torch.Tensor] = None
         # Entropy coefficient / Entropy temperature
         # Inverse of the reward scale
-        self.ent_coef = ent_coef
-        self.ent_coef_optimizer = None
-
-        # Action limit for clamping: critically, assumes all dimensions share the same bound!
-        self.act_limit = env.action_space.high[0]
+        self.alpha = alpha
+        self.alpha_optimizer = None
 
         # Create actor-critic module and target networks
-        self.ac = actor_critic_type(
-            env.observation_space, env.action_space, device=comp_device, **ac_kwargs
-        )
-        self.ac_targ = deepcopy(self.ac)
+        self.policy = policy
+        self.policy_targ = deepcopy(self.policy)
 
         # Freeze target networks with respect to optimizers (only update via polyak averaging)
-        for p in self.ac_targ.parameters():
+        for p in self.policy_targ.parameters():
             p.requires_grad = False
 
         # List of parameters for both Q-networks (save this for convenience)
         self.q_params = itertools.chain(
-            self.ac.q1.parameters(), self.ac.q2.parameters()
+            self.policy.q1.parameters(), self.policy.q2.parameters()
         )
 
         # Experience buffer
-        self.buffer = replay_buffer_type(
-            env=env,
-            device=buff_device,
-            **rb_kwargs,
-        )
+        self.buffer = buffer
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
         var_counts = tuple(
-            count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2]
+            count_vars(module)
+            for module in [self.policy.pi, self.policy.q1, self.policy.q2]
         )
         self.logger.log_msg(
             "\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n" % var_counts
         )
 
         # Set up optimizers for policy and q-function
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr)
+        self.pi_optimizer = Adam(self.policy.pi.parameters(), lr=lr)
         self.q_optimizer = Adam(self.q_params, lr=lr)
 
         # Target entropy is used when learning the entropy coefficient
@@ -211,30 +176,32 @@ class SAC:
         # The entropy coefficient or entropy can be learned automatically
         # see Automating Entropy Adjustment for Maximum Entropy RL section
         # of https://arxiv.org/abs/1812.05905
-        if isinstance(self.ent_coef, str) and self.ent_coef.startswith("auto"):
-            # Default initial value of ent_coef when learned
+        # Use the same device as policy
+        alpha_device = next(self.policy.parameters()).device
+        if isinstance(self.alpha, str) and self.alpha.startswith("auto"):
+            # Default initial value of alpha when learned
             init_value = 1.0
-            if "_" in self.ent_coef:
-                init_value = float(self.ent_coef.split("_")[1])
+            if "_" in self.alpha:
+                init_value = float(self.alpha.split("_")[1])
                 assert (
                     init_value > 0.0
-                ), "The initial value of ent_coef must be greater than 0"
+                ), "The initial value of alpha must be greater than 0"
 
             # Note: we optimize the log of the entropy coeff which is slightly different from the paper
             # as discussed in https://github.com/rail-berkeley/softlearning/issues/37
-            self.log_ent_coef = torch.log(
-                torch.ones(1, device=comp_device) * init_value
+            self.log_alpha = torch.log(
+                torch.ones(1, device=alpha_device) * init_value
             ).requires_grad_(True)
-            self.ent_coef_optimizer = torch.optim.Adam([self.log_ent_coef], lr=lr)
-            self.ent_coef = torch.tensor(
-                float(init_value), dtype=torch.float32, device=comp_device
+            self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=lr)
+            self.alpha = torch.tensor(
+                float(init_value), dtype=torch.float32, device=alpha_device
             )
         else:
             # Force conversion to float
             # this will throw an error if a malformed string (different from 'auto')
             # is passed
-            self.ent_coef = torch.tensor(
-                float(self.ent_coef), dtype=torch.float32, device=comp_device
+            self.alpha = torch.tensor(
+                float(self.alpha), dtype=torch.float32, device=alpha_device
             )
 
     # Set up function for computing SAC Q-losses
@@ -248,19 +215,19 @@ class SAC:
             data["truncated"],
         )
 
-        q1 = self.ac.q1(o, a)
-        q2 = self.ac.q2(o, a)
+        q1 = self.policy.q1(o, a)
+        q2 = self.policy.q2(o, a)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = self.ac.pi(o2)
+            a2, logp_a2 = self.policy.pi(o2)
 
             # Target Q-values
-            q1_pi_targ = self.ac_targ.q1(o2, a2)
-            q2_pi_targ = self.ac_targ.q2(o2, a2)
+            q1_pi_targ = self.policy_targ.q1(o2, a2)
+            q2_pi_targ = self.policy_targ.q2(o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
-            backup = r + self.gamma * (1 - ter) * (q_pi_targ - self.ent_coef * logp_a2)
+            backup = r + self.gamma * (1 - ter) * (q_pi_targ - self.alpha * logp_a2)
 
         # MSE loss against Bellman backup
         loss_q1 = F.mse_loss(q1, backup)
@@ -277,32 +244,30 @@ class SAC:
     # Set up function for computing SAC pi loss
     def compute_loss_pi(self, data):
         o = data["observation"]
-        pi, logp_pi = self.ac.pi(o)
-        q1_pi = self.ac.q1(o, pi)
-        q2_pi = self.ac.q2(o, pi)
+        pi, logp_pi = self.policy.pi(o)
+        q1_pi = self.policy.q1(o, pi)
+        q2_pi = self.policy.q2(o, pi)
         q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
-        loss_pi = (self.ent_coef * logp_pi - q_pi).mean()
+        loss_pi = (self.alpha * logp_pi - q_pi).mean()
 
         # Useful info for logging
         pi_info = dict(log_pi=logp_pi.detach().cpu().numpy())
 
         return loss_pi, logp_pi, pi_info
 
-    def compute_loss_ent_coef(self, logp_pi):
+    def compute_loss_alpha(self, logp_pi):
         # Important: detach the variable from the graph
         # so we don't change it with other losses
         # see https://github.com/rail-berkeley/softlearning/issues/60
-        ent_coef = torch.exp(self.log_ent_coef.detach())
-        ent_coef_loss = -(
-            self.log_ent_coef * (logp_pi + self.target_entropy).detach()
-        ).mean()
+        alpha = torch.exp(self.log_alpha.detach())
+        alpha_loss = -(self.log_alpha * (logp_pi + self.target_entropy).detach()).mean()
 
-        return ent_coef_loss, ent_coef
+        return alpha_loss, alpha
 
     def update(self, data) -> dict[str, float]:
-        self.ac.train()
+        self.policy.train()
         # First run one gradient descent step for Q1 and Q2
         self.q_optimizer.zero_grad()
         loss_q, q_info = self.compute_loss_q(data)
@@ -326,7 +291,9 @@ class SAC:
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
-            for p, p_targ in zip(self.ac.parameters(), self.ac_targ.parameters()):
+            for p, p_targ in zip(
+                self.policy.parameters(), self.policy_targ.parameters()
+            ):
                 # NB: We use an in-place operations "mul_", "add_" to update target
                 # params, as opposed to "mul" and "add", which would make new tensors.
                 p_targ.data.mul_(self.polyak)
@@ -334,35 +301,31 @@ class SAC:
 
         # Optimize entropy coefficient, also called
         # entropy temperature or alpha in the paper
-        if self.ent_coef_optimizer is not None:
-            ent_coef_loss, ent_coef = self.compute_loss_ent_coef(logp_pi)
-            self.ent_coef_optimizer.zero_grad()
-            ent_coef_loss.backward()
-            self.ent_coef_optimizer.step()
-            self.ent_coef = ent_coef
+        if self.alpha_optimizer is not None:
+            alpha_loss, alpha = self.compute_loss_alpha(logp_pi)
+            self.alpha_optimizer.zero_grad()
+            alpha_loss.backward()
+            self.alpha_optimizer.step()
+            self.alpha = alpha
 
         return {
             "q": loss_q.item(),
             "pi": loss_pi.item(),
-            "ent_coef": ent_coef_loss.item(),
+            "alpha": alpha_loss.item(),
         }
-
-    def get_action(self, o, deterministic=False):
-        a = self.ac.act(o, deterministic)
-        return np.clip(a, -self.act_limit, self.act_limit)
 
     def test(
         self, env: gym.Env, n_episodes: int, sleep: float = 0
     ) -> Tuple[float, float]:
         ep_returns = []
         ep_lengths = []
-        self.ac.eval()
+        self.policy.eval()
 
         for _ in range(n_episodes):
             (o, i), d, ep_ret, ep_len = env.reset(), False, 0, 0
-            while not (d or (ep_len == self.max_ep_len)):
+            while not (d or (ep_len == self.max_episode_len)):
                 # Take deterministic actions at test time
-                o, r, ter, tru, i = env.step(self.get_action(o, True))
+                o, r, ter, tru, i = env.step(self.policy.act(o, True))
                 if sleep > 0:
                     time.sleep(sleep)
                 d = ter or tru
@@ -387,7 +350,7 @@ class SAC:
                 # from a uniform distribution for better exploration. Afterwards,
                 # use the learned policy.
                 if t > self.start_steps:
-                    a = self.get_action(o)
+                    a = self.policy.act(o)
                 else:
                     a = self.env.action_space.sample()
 
@@ -404,7 +367,7 @@ class SAC:
                 o = o2
 
                 # End of trajectory handling
-                if (ter or tru) or (ep_len == self.max_ep_len):
+                if (ter or tru) or (ep_len == self.max_episode_len):
                     self.logger.log_scalar("ep_return", ep_ret, t)
                     self.logger.log_scalar("ep_length", ep_len, t)
                     self.buffer.end_episode()
@@ -413,12 +376,12 @@ class SAC:
 
                 # Update handling
                 if t >= self.update_after and t % self.update_every == 0:
-                    for j in range(self.num_updates or self.update_every):
+                    for j in range(self.n_updates or self.update_every):
                         batch = self.buffer.sample_batch(self.batch_size)
                         losses = self.update(data=batch)
                         self.logger.log_scalar("loss_q", losses["q"], t)
                         self.logger.log_scalar("loss_pi", losses["pi"], t)
-                        self.logger.log_scalar("loss_ent_coef", losses["ent_coef"], t)
+                        self.logger.log_scalar("loss_alpha", losses["alpha"], t)
 
                 # End of epoch handling
                 if t % log_interval == 0:

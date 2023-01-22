@@ -47,27 +47,27 @@ class HerReplayBuffer(DictReplayBuffer):
             info=info,
         )
 
-        if self.ptr == self.ep_start_ptr:
+        if self._ptr == self.ep_start_ptr:
             raise "Episode longer than buffer size"
 
     def start_episode(self):
-        self.ep_start_ptr = self.ptr
+        self.ep_start_ptr = self._ptr
 
     def end_episode(self):
         self._synthesize_experience()
 
     def _get_current_episode(self):
-        if self.ep_start_ptr == self.ptr:
-            return [self.ptr]
+        if self.ep_start_ptr == self._ptr:
+            return [self._ptr]
 
-        if self.ep_start_ptr <= self.ptr:
-            idxs = np.arange(self.ep_start_ptr, self.ptr)
+        if self.ep_start_ptr <= self._ptr:
+            idxs = np.arange(self.ep_start_ptr, self._ptr)
         else:
             idxs = np.concatenate(
-                [np.arange(self.ep_start_ptr, self.size), np.arange(self.ptr)]
+                [np.arange(self.ep_start_ptr, self.size), np.arange(self._ptr)]
             )
 
-        return self._get_batch(idxs)
+        return self._batch(idxs)
 
     def _synthesize_experience(self):
         ep = self._get_current_episode()

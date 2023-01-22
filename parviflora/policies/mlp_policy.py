@@ -11,6 +11,7 @@ from ..utils.observation import unsqueeze_observation
 from ..extractors.array_extractor import ArrayExtractor
 from ..extractors.base_extractor import BaseExtractor
 from ..models.mlp import mlp
+from gymnasium import spaces
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
@@ -24,11 +25,9 @@ class SquashedGaussianMLPActor(nn.Module):
         hidden_sizes: Iterable[int],
         activation: Type[nn.Module],
         act_limit: float,
-        device: torch.device = None,
     ):
         super().__init__()
         self.extractor = extractor
-        self.device = device
 
         self.net = mlp(
             [extractor.n_features] + list(hidden_sizes), activation, activation
@@ -36,11 +35,6 @@ class SquashedGaussianMLPActor(nn.Module):
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
-
-        if device:
-            self.net.to(device)
-            self.mu_layer.to(device)
-            self.log_std_layer.to(device)
 
     def forward(self, obs, deterministic=False, with_logprob=True):
         obs = self.extractor(obs)
@@ -85,22 +79,16 @@ class MLPQFunction(nn.Module):
         act_dim: int,
         hidden_sizes: Iterable[int],
         activation: Type[nn.Module],
-        device: torch.device = None,
     ):
         super().__init__()
         self.extractor = extractor
-        self.device = device
 
         self.q = mlp(
             [extractor.n_features + act_dim] + list(hidden_sizes) + [1], activation
         )
 
-        if device:
-            self.q.to(device)
-
     def forward(self, obs, act):
         obs = self.extractor(obs)
-        act = act.to(self.device)
 
         q = self.q(torch.cat([obs, act], dim=-1))
         return torch.squeeze(q, -1)  # Critical to ensure q has right shape.
@@ -109,33 +97,38 @@ class MLPQFunction(nn.Module):
 class MlpPolicy(nn.Module):
     def __init__(
         self,
-        observation_space,
-        action_space,
-        hidden_sizes=(256, 256),
-        activation=nn.ReLU,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        hidden_sizes: Iterable[int] = (256, 256),
+        activation: nn.Module = nn.ReLU,
         extractor_type: BaseExtractor = ArrayExtractor,
-        device=None,
+        clip_action: bool = True,
     ):
         super().__init__()
-
-        self.device = device
-        self.extractor: BaseExtractor = extractor_type(observation_space, device=device)
+        self.clip_action = clip_action
+        self.extractor: BaseExtractor = extractor_type(observation_space)
 
         act_dim = action_space.shape[0]
-        act_limit = action_space.high[0]
+        # Action limit for clamping: critically, assumes all dimensions share the same bound!
+        self.act_limit = action_space.high[0]
 
         # build policy and value functions
         self.pi = SquashedGaussianMLPActor(
-            self.extractor, act_dim, hidden_sizes, activation, act_limit, device=device
+            self.extractor,
+            act_dim,
+            hidden_sizes,
+            activation,
+            self.act_limit,
         )
-        self.q1 = MLPQFunction(
-            self.extractor, act_dim, hidden_sizes, activation, device=device
-        )
-        self.q2 = MLPQFunction(
-            self.extractor, act_dim, hidden_sizes, activation, device=device
-        )
+        self.q1 = MLPQFunction(self.extractor, act_dim, hidden_sizes, activation)
+        self.q2 = MLPQFunction(self.extractor, act_dim, hidden_sizes, activation)
 
     def act(self, obs: Union[NDArray, dict[str, NDArray]], deterministic=False):
         with torch.no_grad():
             a, _ = self.pi(unsqueeze_observation(obs), deterministic, False)
-            return a.squeeze(dim=0).cpu().numpy()
+            a = a.squeeze(dim=0).cpu().numpy()
+
+        if self.clip_action:
+            a = np.clip(a, -self.act_limit, self.act_limit)
+
+        return a

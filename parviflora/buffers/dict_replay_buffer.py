@@ -1,9 +1,12 @@
-from typing import Any, Optional, Union
+from pathlib import Path
+from typing import Any, Optional, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
+import pandas as pd
 import torch
 from numpy.typing import NDArray
+from pandas import DataFrame
 from torch import Tensor
 
 from ..buffers.base_buffer import BaseBuffer
@@ -19,71 +22,66 @@ class DictReplayBuffer(BaseBuffer):
         self, env: gym.Env, size: int = 100000, device: Optional[torch.device] = None
     ):
         assert isinstance(env.observation_space, gym.spaces.Dict)
-
-        self.device = device
+        super().__init__(env=env, size=size, device=device)
 
         obs_space = {
             k: combined_shape(size, v.shape) for k, v in env.observation_space.items()
         }
 
-        self.observations = {
+        self.observations: dict[str, Tensor] = {
             k: torch.zeros(obs_space[k], dtype=torch.float32, device=device)
             for k, v in env.observation_space.items()
         }
-        self.next_observations = {
+        self.next_observations: dict[str, Tensor] = {
             k: torch.zeros(obs_space[k], dtype=torch.float32, device=device)
             for k, v in env.observation_space.items()
         }
-        self.actions = torch.zeros(
-            combined_shape(size, env.action_space.shape),
-            dtype=torch.float32,
-            device=device,
-        )
-        self.rewards = torch.zeros(size, dtype=torch.float32, device=device)
-        self.terminations = torch.zeros(size, dtype=torch.float32, device=device)
-        self.truncations = torch.zeros(size, dtype=torch.float32, device=device)
-        self.infos = np.empty((size, ), dtype=object)
-        self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(
+    def _store_observations(
         self,
         observation: dict[str, NDArray],
-        action: NDArray,
-        reward: float,
         next_observation: dict[str, NDArray],
-        terminated: bool,
-        truncated: bool,
-        info: dict[str, Any],
     ) -> None:
         for k in observation.keys():
-            self.observations[k][self.ptr] = torch.as_tensor(
+            self.observations[k][self._ptr] = torch.as_tensor(
                 observation[k], dtype=torch.float32
             )
         for k in next_observation.keys():
-            self.next_observations[k][self.ptr] = torch.as_tensor(
+            self.next_observations[k][self._ptr] = torch.as_tensor(
                 next_observation[k], dtype=torch.float32
             )
-        self.actions[self.ptr] = torch.as_tensor(action, dtype=torch.float32)
-        self.rewards[self.ptr] = torch.as_tensor(reward, dtype=torch.float32)
-        self.terminations[self.ptr] = torch.as_tensor(terminated, dtype=torch.float32)
-        self.truncations[self.ptr] = torch.as_tensor(truncated, dtype=torch.float32)
-        self.infos[self.ptr] = info
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
 
-    def _get_batch(self, idxs: Tensor) -> dict[str, Union[Tensor, dict[str, Tensor]]]:
+    def _observations_batch(self, idxs: Tensor) -> dict[str, dict[str, Tensor]]:
         return dict(
             observation={k: v[idxs] for k, v in self.observations.items()},
             next_observation={k: v[idxs] for k, v in self.next_observations.items()},
-            action=self.actions[idxs],
-            reward=self.rewards[idxs],
-            terminated=self.terminations[idxs],
-            truncated=self.truncations[idxs],
-            info=self.infos[idxs],
         )
 
-    def start_episode(self):
-        pass
+    def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
+        names = []
+        data = []
 
-    def end_episode(self):
-        pass
+        for k, v in self.observations.items():
+            names.append(f"observation[{k}]")
+            data.append(v.numpy())
+
+        for k, v in self.next_observations.items():
+            names.append(f"next_observation[{k}]")
+            data.append(v.numpy())
+
+        return names, data
+
+    def _load_observations(self, df: DataFrame) -> None:
+        observation_columns = [c for c in df.columns if c.startswith("observation[")]
+
+        for c in observation_columns:
+            k = c[len("observation[") : -1]
+            self.observations[k] = torch.from_numpy(df[c], dtype=torch.float32)
+
+        next_observation_columns = [
+            c for c in df.columns if c.startswith("next_observation[")
+        ]
+
+        for c in next_observation_columns:
+            k = c[len("next_observation[") : -1]
+            self.next_observations[k] = torch.from_numpy(df[c], dtype=torch.float32)
