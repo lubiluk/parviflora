@@ -1,12 +1,8 @@
-from pathlib import Path
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple
 
 import gymnasium as gym
-import numpy as np
-import pandas as pd
 import torch
 from numpy.typing import NDArray
-from pandas import DataFrame
 from torch import Tensor
 
 from ..buffers.base_buffer import BaseBuffer
@@ -58,30 +54,30 @@ class DictReplayBuffer(BaseBuffer):
         )
 
     def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
-        names = []
-        data = []
+        data_dict = {
+            f"observation[{k}]": v.numpy() for k, v in self.observations.items()
+        }
+        data_dict.update(
+            {f"observation[{k}]": v.numpy() for k, v in self.observations.items()}
+        )
 
-        for k, v in self.observations.items():
-            names.append(f"observation[{k}]")
-            data.append(v.numpy())
+        return data_dict
 
-        for k, v in self.next_observations.items():
-            names.append(f"next_observation[{k}]")
-            data.append(v.numpy())
-
-        return names, data
-
-    def _load_observations(self, df: DataFrame) -> None:
-        observation_columns = [c for c in df.columns if c.startswith("observation[")]
+    def _load_observations(self, data_dict: dict[str, NDArray]) -> None:
+        observation_columns = [
+            c for c in data_dict.keys() if c.startswith("observation[")
+        ]
 
         for c in observation_columns:
             k = c[len("observation[") : -1]
-            self.observations[k] = torch.from_numpy(df[c], dtype=torch.float32)
+            self.observations[k] = torch.as_tensor(data_dict[c], dtype=torch.float32)
 
         next_observation_columns = [
-            c for c in df.columns if c.startswith("next_observation[")
+            c for c in data_dict.columns if c.startswith("next_observation[")
         ]
 
         for c in next_observation_columns:
             k = c[len("next_observation[") : -1]
-            self.next_observations[k] = torch.from_numpy(df[c], dtype=torch.float32)
+            self.next_observations[k] = torch.as_tensor(
+                data_dict[c], dtype=torch.float32
+            )

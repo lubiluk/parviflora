@@ -1,13 +1,11 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional, Self, Tuple, Union
+from typing import Any, Optional, Union
 
 import gymnasium as gym
 import numpy as np
-import pandas as pd
 import torch
 from numpy.typing import NDArray
-from pandas import DataFrame
 from torch import Tensor
 
 from ..utils.shape import combined_shape
@@ -61,11 +59,11 @@ class BaseBuffer(ABC):
     def sample_batch(
         self, batch_size: int = 32
     ) -> dict[str, Union[Tensor, dict[str, Tensor]]]:
-        # idxs = torch.randint(0, self.size, size=(batch_size,))
-        idxs = np.random.randint(0, self.size, size=batch_size)
-        return self._batch(idxs)
+        idxs = torch.randint(0, self.size, size=(batch_size,))
+        # idxs = np.random.randint(0, self.size, size=batch_size)
+        return self.batch(idxs)
 
-    def _batch(self, idxs: Tensor) -> dict[str, Union[Tensor, dict[str, Tensor]]]:
+    def batch(self, idxs: Tensor) -> dict[str, Union[Tensor, dict[str, Tensor]]]:
         data = dict(
             action=self.actions[idxs],
             reward=self.rewards[idxs],
@@ -91,38 +89,37 @@ class BaseBuffer(ABC):
         pass
 
     def save(self, filepath: Union[str, Path]) -> None:
-        names, data = self._observations_for_saving()
+        data_dict = self._observations_for_saving()
+        data_dict.update(
+            {
+                "action": self.actions.numpy(),
+                "reward": self.rewards.numpy(),
+                "termination": self.terminations.numpy(),
+                "truncation": self.truncations.numpy(),
+                "info": self.infos,
+            }
+        )
 
-        names.append("action")
-        data.append(self.actions.numpy())
-
-        names.append("reward")
-        data.append(self.rewards.numpy())
-
-        names.append("termination")
-        data.append(self.terminations.numpy())
-
-        names.append("truncation")
-        data.append(self.truncations.numpy())
-
-        names.append("info")
-        data.append(self.infos)
-
-        df = pd.DataFrame(data, columns=names)
-        df.to_csv(filepath, index=False)
+        np.savez(filepath, **data_dict)
 
     @abstractmethod
-    def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
+    def _observations_for_saving(self) -> dict[str, NDArray]:
         ...
 
     def load(self, filepath: Union[str, Path]) -> None:
-        df = pd.read_csv(filepath)
-        self.actions = torch.from_numpy(df["action"], dtype=torch.float32)
-        self.rewards = torch.from_numpy(df["reward"], dtype=torch.float32)
-        self.terminations = torch.from_numpy(df["termination"], dtype=torch.float32)
-        self.truncations = torch.from_numpy(df["truncation"], dtype=torch.float32)
-        self.infos = torch.from_numpy(df["info"], dtype=torch.float32)
+        data_dict: dict[str, NDArray] = np.load(filepath, allow_pickle=True)
+
+        self._load_observations(data_dict)
+        self.actions = torch.as_tensor(data_dict["action"], dtype=torch.float32)
+        self.rewards = torch.as_tensor(data_dict["reward"], dtype=torch.float32)
+        self.terminations = torch.as_tensor(
+            data_dict["termination"], dtype=torch.float32
+        )
+        self.truncations = torch.as_tensor(
+            data_dict["truncation"], dtype=torch.float32
+        )
+        self.infos = data_dict["info"]
 
     @abstractmethod
-    def _load_observations(self, df: DataFrame) -> None:
+    def _load_observations(self, data_dict: dict[str, NDArray]) -> None:
         ...

@@ -48,7 +48,7 @@ def main():
 
     env = gym.make("Pendulum-v1")
     policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
-    buffer = ReplayBuffer(env=env, size=1000000)
+    buffer = ReplayBuffer(env=env, size=2000)
 
     with TensorboardLogger() as logger:
         algo = SAC(
@@ -61,13 +61,15 @@ def main():
             alpha="auto",
             logger=logger,
         )
-        algo.train(n_steps=20000, log_interval=1000)
+        algo.train(n_steps=2000, log_interval=1000)
 
-    env = gym.make("Pendulum-v1", render_mode="human")
-    test_rew, test_ep_len = algo.test(env, n_episodes=10)
-    print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
+    # env = gym.make("Pendulum-v1", render_mode="human")
+    # test_rew, test_ep_len = algo.test(env, n_episodes=5)
+    # print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
 
-    buffer.save("data/buffer.csv")
+    buffer.save("data/buffer.npz")
+    new_buffer = ReplayBuffer(env=env, size=2000)
+    new_buffer.load("data/buffer.npz")
 
     # env = BitFlippingEnv(n_bits=15, continuous=True, max_steps=15)
     # ac_kwargs = dict(hidden_sizes=[64, 64], extractor_type=DictExtractor)

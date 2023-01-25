@@ -67,7 +67,7 @@ class HerReplayBuffer(DictReplayBuffer):
                 [np.arange(self.ep_start_ptr, self.size), np.arange(self._ptr)]
             )
 
-        return self._batch(idxs)
+        return self.batch(idxs)
 
     def _synthesize_experience(self):
         ep = self._get_current_episode()

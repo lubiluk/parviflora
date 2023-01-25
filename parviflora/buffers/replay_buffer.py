@@ -54,19 +54,15 @@ class ReplayBuffer(BaseBuffer):
         )
 
     def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
-        names = []
-        data = []
+        return {
+            "observation": self.observations.numpy(),
+            "next_observation": self.next_observations.numpy(),
+        }
 
-        names.append(f"observation")
-        data.append(self.observations.numpy())
-
-        names.append(f"next_observations")
-        data.append(self.next_observations.numpy())
-
-        return names, data
-
-    def _load_observations(self, df: DataFrame) -> None:
-        self.observations = torch.from_numpy(df["observations"], dtype=torch.float32)
-        self.next_observations = torch.from_numpy(
-            df["next_observations"], dtype=torch.float32
+    def _load_observations(self, data_dict: dict[str, NDArray]) -> None:
+        self.observations = torch.as_tensor(
+            data_dict["observation"], dtype=torch.float32
+        )
+        self.next_observations = torch.as_tensor(
+            data_dict["next_observation"], dtype=torch.float32
         )

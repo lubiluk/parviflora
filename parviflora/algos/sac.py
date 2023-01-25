@@ -394,3 +394,22 @@ class SAC:
                     self.logger.log_scalar("test_ep_length", test_ep_length, t)
 
         return test_ep_return
+
+    def batch_train(self, n_epochs):
+        batch_size = self.batch_size
+        n_samples = self.buffer.size
+
+        for e in range(n_epochs):
+            idxs = torch.randperm(n_samples)
+
+            with trange(0, n_samples, batch_size) as prgs:
+                prgs.set_description(f"Epoch {e}")
+                for t in prgs:
+                    start = t
+                    end = min(start + batch_size, n_samples)
+                    batch_idx = idxs[start:end]
+                    batch = self.buffer.batch(batch_idx)
+                    losses = self.update(data=batch)
+                    self.logger.log_scalar("loss_q", losses["q"], t)
+                    self.logger.log_scalar("loss_pi", losses["pi"], t)
+                    self.logger.log_scalar("loss_alpha", losses["alpha"], t)
