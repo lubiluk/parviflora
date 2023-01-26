@@ -119,6 +119,7 @@ class BaseBuffer(ABC):
             data_dict["truncation"], dtype=torch.float32
         )
         self.infos = data_dict["info"]
+        self.max_size = self.size = len(self.rewards)
 
     @abstractmethod
     def _load_observations(self, data_dict: dict[str, NDArray]) -> None:
