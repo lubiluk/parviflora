@@ -16,7 +16,8 @@ setup(
         # 'pandas',
         # 'seaborn',
         'torch',
-        'tqdm'
+        'tqdm',
+        'tensorboard'
     ],
     description="RL",
     author="Paul Gajewski",

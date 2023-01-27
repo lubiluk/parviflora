@@ -12,7 +12,7 @@ from .extractors.array_extractor import ArrayExtractor
 from .extractors.dict_extractor import DictExtractor
 from .loggers.tensorboard_logger import TensorboardLogger
 
-import gym_process
+# import gym_process
 
 
 def main():
@@ -101,10 +101,13 @@ def main():
 
     import panda_gym
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     env = gym.make("PandaPush-v3")
 
     policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=[512, 512, 512], extractor_type=DictExtractor)
-    buffer = HerReplayBuffer(env=env, size=1_000_000, n_sampled_goal=4, goal_selection_strategy="future")
+    policy.to(device)
+    buffer = HerReplayBuffer(env=env, size=1_000_000, n_sampled_goal=4, goal_selection_strategy="future", device=device)
     # buffer.load("data/her_buffer.npz")
     logger = TensorboardLogger()
     logger.open()

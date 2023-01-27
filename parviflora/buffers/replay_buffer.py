@@ -5,7 +5,6 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 from torch import Tensor
-from pandas import DataFrame
 
 from ..buffers.base_buffer import BaseBuffer
 from ..utils.shape import combined_shape
