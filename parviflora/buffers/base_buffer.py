@@ -92,11 +92,11 @@ class BaseBuffer(ABC):
         data_dict = self._observations_for_saving()
         data_dict.update(
             {
-                "action": self.actions.numpy(),
-                "reward": self.rewards.numpy(),
-                "termination": self.terminations.numpy(),
-                "truncation": self.truncations.numpy(),
-                "info": self.infos,
+                "action": self.actions[:self.size].numpy(),
+                "reward": self.rewards[:self.size].numpy(),
+                "termination": self.terminations[:self.size].numpy(),
+                "truncation": self.truncations[:self.size].numpy(),
+                "info": self.infos[:self.size],
             }
         )
 

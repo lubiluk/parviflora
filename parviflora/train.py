@@ -46,37 +46,37 @@ def main():
     #     )
     #     algo.train(n_steps=20000, log_interval=100)
 
-    env = gym.make("Pendulum-v1")
-    policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
-    buffer = ReplayBuffer(env=env, size=20000)
-    logger = TensorboardLogger()
-    logger.open()
+    # env = gym.make("Pendulum-v1")
+    # policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
+    # buffer = ReplayBuffer(env=env, size=20000)
+    # logger = TensorboardLogger()
+    # logger.open()
 
-    algo = SAC(
-        env,
-        policy=policy,
-        buffer=buffer,
-        update_every=1,
-        update_after=100,
-        batch_size=256,
-        alpha="auto",
-        logger=logger,
-    )
+    # algo = SAC(
+    #     env,
+    #     policy=policy,
+    #     buffer=buffer,
+    #     update_every=1,
+    #     update_after=100,
+    #     batch_size=256,
+    #     alpha="auto",
+    #     logger=logger,
+    # )
 
     # algo.train(n_steps=20000, log_interval=1000)
     # buffer.save("data/buffer.npz")
 
-    new_buffer = ReplayBuffer(env=env, size=2000)
-    new_buffer.load("data/buffer.npz")
+    # new_buffer = ReplayBuffer(env=env, size=2000)
+    # new_buffer.load("data/buffer.npz")
 
-    algo.buffer = new_buffer
-    algo.batch_train(50)
+    # algo.buffer = new_buffer
+    # algo.batch_train(50)
 
-    logger.close()
+    # logger.close()
 
-    env = gym.make("Pendulum-v1", render_mode="human")
-    test_rew, test_ep_len = algo.test(env, n_episodes=5)
-    print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
+    # env = gym.make("Pendulum-v1", render_mode="human")
+    # test_rew, test_ep_len = algo.test(env, n_episodes=5)
+    # print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
 
     # env = BitFlippingEnv(n_bits=15, continuous=True, max_steps=15)
     # ac_kwargs = dict(hidden_sizes=[64, 64], extractor_type=DictExtractor)
@@ -101,32 +101,42 @@ def main():
 
     import panda_gym
 
-    env = gym.make("PandaReach-v3")
-    ac_kwargs = dict(hidden_sizes=[64, 64], extractor_type=DictExtractor)
-    rb_kwargs = dict(size=1000000, n_sampled_goal=4, goal_selection_strategy="future")
+    env = gym.make("PandaPush-v3")
 
-    with TensorboardLogger() as logger:
-        algo = SAC(
-            env,
-            policy_kwargs=ac_kwargs,
-            buffer_type=HerReplayBuffer,
-            buffer_kwargs=rb_kwargs,
-            update_every=1,
-            update_after=1000,
-            batch_size=256,
-            alpha="auto",
-            gamma=0.95,
-            lr=0.001,
-            logger=logger,
-            max_episode_len=100,
-        )
-        algo.train(n_steps=3000, log_interval=1000)
-        env.close()
+    policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=[512, 512, 512], extractor_type=DictExtractor)
+    buffer = HerReplayBuffer(env=env, size=1_000_000, n_sampled_goal=4, goal_selection_strategy="future")
+    # buffer.load("data/her_buffer.npz")
+    logger = TensorboardLogger()
+    logger.open()
 
-    env = gym.make("PandaReach-v3", render_mode="human")
-    test_rew, test_ep_len = algo.test(env, n_episodes=100, sleep=1/30)
+    algo = SAC(
+        env,
+        policy=policy,
+        buffer=buffer,
+        update_every=1,
+        update_after=1000,
+        batch_size=2048,
+        alpha="auto",
+        gamma=0.95,
+        polyak=0.95,
+        lr=0.001,
+        logger=logger,
+        max_episode_len=100,
+    )
+    algo.train(n_steps=1000000, log_interval=1000)
+    # algo.batch_train(300)
+    env.close()
+    logger.close()
+
+    buffer.save("data/her_buffer.npz")
+
+    env = gym.make("PandaPush-v3", render_mode="human")
+    test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1/30)
     env.close()
     print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
+
+    
+
 
 
 if __name__ == "__main__":

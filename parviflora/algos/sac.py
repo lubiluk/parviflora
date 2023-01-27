@@ -399,17 +399,22 @@ class SAC:
         batch_size = self.batch_size
         n_samples = self.buffer.size
 
-        for e in range(n_epochs):
-            idxs = torch.randperm(n_samples)
+        epoch_steps = len(range(0, n_samples, batch_size))
+        total_steps = epoch_steps * n_epochs
+        epoch = 0
 
-            with trange(0, n_samples, batch_size) as prgs:
-                prgs.set_description(f"Epoch {e}")
-                for t in prgs:
-                    start = t
-                    end = min(start + batch_size, n_samples)
-                    batch_idx = idxs[start:end]
-                    batch = self.buffer.batch(batch_idx)
-                    losses = self.update(data=batch)
-                    self.logger.log_scalar("loss_q", losses["q"], t)
-                    self.logger.log_scalar("loss_pi", losses["pi"], t)
-                    self.logger.log_scalar("loss_alpha", losses["alpha"], t)
+        with trange(total_steps) as prgs:
+            for t in prgs:
+                if t % epoch_steps == 0:
+                    epoch += 1
+                    idxs = torch.randperm(n_samples)
+                    prgs.set_description(f"Epoch {epoch}")
+
+                start = t
+                end = min(start + batch_size, n_samples)
+                batch_idx = idxs[start:end]
+                batch = self.buffer.batch(batch_idx)
+                losses = self.update(data=batch)
+                self.logger.log_scalar("loss_q", losses["q"], t)
+                self.logger.log_scalar("loss_pi", losses["pi"], t)
+                self.logger.log_scalar("loss_alpha", losses["alpha"], t)

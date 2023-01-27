@@ -55,10 +55,10 @@ class DictReplayBuffer(BaseBuffer):
 
     def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
         data_dict = {
-            f"observation[{k}]": v.numpy() for k, v in self.observations.items()
+            f"observation[{k}]": v[:self.size].numpy() for k, v in self.observations.items()
         }
         data_dict.update(
-            {f"observation[{k}]": v.numpy() for k, v in self.observations.items()}
+            {f"observation[{k}]": v[:self.size].numpy() for k, v in self.observations.items()}
         )
 
         return data_dict
@@ -73,7 +73,7 @@ class DictReplayBuffer(BaseBuffer):
             self.observations[k] = torch.as_tensor(data_dict[c], dtype=torch.float32)
 
         next_observation_columns = [
-            c for c in data_dict.columns if c.startswith("next_observation[")
+            c for c in data_dict.keys() if c.startswith("next_observation[")
         ]
 
         for c in next_observation_columns:
