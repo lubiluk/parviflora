@@ -118,15 +118,15 @@ def main():
         buffer=buffer,
         update_every=1,
         update_after=1000,
-        batch_size=2048,
+        batch_size=256,
         alpha="auto",
         gamma=0.95,
-        polyak=0.95,
-        lr=0.001,
+        # polyak=0.95,
+        lr=7e-4,
         logger=logger,
         max_episode_len=100,
     )
-    algo.train(n_steps=1000000, log_interval=1000)
+    algo.train(n_steps=3000000, log_interval=1000)
     # algo.batch_train(300)
     env.close()
     logger.close()

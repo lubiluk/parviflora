@@ -382,6 +382,7 @@ class SAC:
                         self.logger.log_scalar("loss_q", losses["q"], t)
                         self.logger.log_scalar("loss_pi", losses["pi"], t)
                         self.logger.log_scalar("loss_alpha", losses["alpha"], t)
+                        self.logger.log_scalar("alpha", self.alpha, t)
 
                 # End of epoch handling
                 if t % log_interval == 0:
@@ -418,3 +419,4 @@ class SAC:
                 self.logger.log_scalar("loss_q", losses["q"], t)
                 self.logger.log_scalar("loss_pi", losses["pi"], t)
                 self.logger.log_scalar("loss_alpha", losses["alpha"], t)
+                self.logger.log_scalar("alpha", self.alpha, t)
