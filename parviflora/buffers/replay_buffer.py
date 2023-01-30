@@ -54,8 +54,8 @@ class ReplayBuffer(BaseBuffer):
 
     def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
         return {
-            "observation": self.observations[:self.size].numpy(),
-            "next_observation": self.next_observations[:self.size].numpy(),
+            "observation": self.observations[:self.size].cpu().numpy(),
+            "next_observation": self.next_observations[:self.size].cpu().numpy(),
         }
 
     def _load_observations(self, data_dict: dict[str, NDArray]) -> None:

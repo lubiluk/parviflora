@@ -88,25 +88,26 @@ class BaseBuffer(ABC):
     def end_episode(self):
         pass
 
-    def save(self, filepath: Union[str, Path]) -> None:
+    def save(self, filepath: Path) -> None:
         data_dict = self._observations_for_saving()
         data_dict.update(
             {
-                "action": self.actions[:self.size].numpy(),
-                "reward": self.rewards[:self.size].numpy(),
-                "termination": self.terminations[:self.size].numpy(),
-                "truncation": self.truncations[:self.size].numpy(),
+                "action": self.actions[:self.size].cpu().numpy(),
+                "reward": self.rewards[:self.size].cpu().numpy(),
+                "termination": self.terminations[:self.size].cpu().numpy(),
+                "truncation": self.truncations[:self.size].cpu().numpy(),
                 "info": self.infos[:self.size],
             }
         )
 
+        filepath.parent.mkdir(exist_ok=True, parents=True)
         np.savez(filepath, **data_dict)
 
     @abstractmethod
     def _observations_for_saving(self) -> dict[str, NDArray]:
         ...
 
-    def load(self, filepath: Union[str, Path]) -> None:
+    def load(self, filepath: Path) -> None:
         data_dict: dict[str, NDArray] = np.load(filepath, allow_pickle=True)
 
         self._load_observations(data_dict)

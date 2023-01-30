@@ -11,6 +11,7 @@ from .envs.bit_flipping_env import BitFlippingEnv
 from .extractors.array_extractor import ArrayExtractor
 from .extractors.dict_extractor import DictExtractor
 from .loggers.tensorboard_logger import TensorboardLogger
+from pathlib import Path
 
 # import gym_process
 
@@ -26,7 +27,6 @@ def main():
     #         self.logger.log_msg("\nUsing GPU computaion\n")
     # else:
     #     self.logger.log_msg("\nGPU unavailable\n")
-
 
     # env = gym.make("PaperSteam-v0")
     # ac_kwargs = dict(hidden_sizes=(32, 32), extractor_type=ArrayExtractor)
@@ -98,16 +98,26 @@ def main():
     # algo.train(n_steps=10000, log_interval=100)
     # env.close()
 
-
     import panda_gym
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     env = gym.make("PandaPush-v3")
 
-    policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=[512, 512, 512], extractor_type=DictExtractor)
+    policy = MlpPolicy(
+        env.observation_space,
+        env.action_space,
+        hidden_sizes=[512, 512, 512],
+        extractor_type=DictExtractor,
+    )
     policy.to(device)
-    buffer = HerReplayBuffer(env=env, size=1_000_000, n_sampled_goal=4, goal_selection_strategy="future", device=device)
+    buffer = HerReplayBuffer(
+        env=env,
+        size=1_000_000,
+        n_sampled_goal=4,
+        goal_selection_strategy="future",
+        device=device,
+    )
     # buffer.load("data/her_buffer.npz")
     logger = TensorboardLogger()
     logger.open()
@@ -126,20 +136,17 @@ def main():
         logger=logger,
         max_episode_len=100,
     )
-    algo.train(n_steps=3000000, log_interval=1000)
+    algo.train(n_steps=3_000_000, log_interval=1000)
     # algo.batch_train(300)
     env.close()
     logger.close()
 
-    buffer.save("data/her_buffer.npz")
+    buffer.save(Path("data/her_buffer.npz"))
 
     env = gym.make("PandaPush-v3", render_mode="human")
-    test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1/30)
+    test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1 / 30)
     env.close()
     print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
-
-    
-
 
 
 if __name__ == "__main__":
