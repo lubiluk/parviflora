@@ -92,11 +92,11 @@ class BaseBuffer(ABC):
         data_dict = self._observations_for_saving()
         data_dict.update(
             {
-                "action": self.actions[:self.size].cpu().numpy(),
-                "reward": self.rewards[:self.size].cpu().numpy(),
-                "termination": self.terminations[:self.size].cpu().numpy(),
-                "truncation": self.truncations[:self.size].cpu().numpy(),
-                "info": self.infos[:self.size],
+                "action": self.actions[: self.size].cpu().numpy(),
+                "reward": self.rewards[: self.size].cpu().numpy(),
+                "termination": self.terminations[: self.size].cpu().numpy(),
+                "truncation": self.truncations[: self.size].cpu().numpy(),
+                "info": self.infos[: self.size],
             }
         )
 
@@ -111,13 +111,17 @@ class BaseBuffer(ABC):
         data_dict: dict[str, NDArray] = np.load(filepath, allow_pickle=True)
 
         self._load_observations(data_dict)
-        self.actions = torch.as_tensor(data_dict["action"], dtype=torch.float32)
-        self.rewards = torch.as_tensor(data_dict["reward"], dtype=torch.float32)
+        self.actions = torch.as_tensor(
+            data_dict["action"], dtype=torch.float32, device=self.device
+        )
+        self.rewards = torch.as_tensor(
+            data_dict["reward"], dtype=torch.float32, device=self.device
+        )
         self.terminations = torch.as_tensor(
-            data_dict["termination"], dtype=torch.float32
+            data_dict["termination"], dtype=torch.float32, device=self.device
         )
         self.truncations = torch.as_tensor(
-            data_dict["truncation"], dtype=torch.float32
+            data_dict["truncation"], dtype=torch.float32, device=self.device
         )
         self.infos = data_dict["info"]
         self.max_size = self.size = len(self.rewards)
