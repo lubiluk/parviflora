@@ -80,7 +80,7 @@ def main():
         extractor_type=DictExtractor,
     )
     # policy.load_state_dict(torch.load("data/model_1m.pt", map_location=torch.device('cpu')))
-    # policy.to(device)
+    policy.to(device)
 
     buffer = HerReplayBuffer(
         env=env,
