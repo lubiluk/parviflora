@@ -79,17 +79,17 @@ def main():
         hidden_sizes=[512, 512, 512],
         extractor_type=DictExtractor,
     )
-    # policy.load_state_dict(torch.load("data/model_1m.pt"))
-    policy.to(device)
+    # policy.load_state_dict(torch.load("data/model_1m.pt", map_location=torch.device('cpu')))
+    # policy.to(device)
 
     buffer = HerReplayBuffer(
         env=env,
-        size=1_000_000,
+        size=4_000_000,
         n_sampled_goal=4,
         goal_selection_strategy="future",
         device=device,
     )
-    buffer.load("data/her_buffer_1m.npz")
+    # buffer.load("data/her_buffer_1m.npz")
     logger = TensorboardLogger()
     logger.open()
 
@@ -107,16 +107,16 @@ def main():
         logger=logger,
         max_episode_len=100,
     )
-    # algo.train(n_steps=3_000_000, log_interval=1000)
-    algo.batch_train(100)
+    algo.train(n_steps=1_000_000, log_interval=1000)
+    # algo.batch_train(100)
     env.close()
     logger.close()
 
-    torch.save(policy.state_dict(), "data/model_1m.pt")
+    policy.cpu()
+    torch.save(policy.state_dict(), "data/model_1m_ref.pt")
+    buffer.save(Path("data/her_buffer_1m_all.npz"))
 
-    # buffer.save(Path("data/her_buffer.npz"))
-
-    env = gym.make("PandaPush-v3", render_mode="human")
+    # env = gym.make("PandaPush-v3", render_mode="human")
     test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1 / 30)
     env.close()
     print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
