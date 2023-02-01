@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import gymnasium as gym
 import torch
+import panda_gym
 
 from parviflora.policies.mlp_policy import MlpPolicy
 
@@ -11,41 +14,9 @@ from .envs.bit_flipping_env import BitFlippingEnv
 from .extractors.array_extractor import ArrayExtractor
 from .extractors.dict_extractor import DictExtractor
 from .loggers.tensorboard_logger import TensorboardLogger
-from pathlib import Path
-
-# import gym_process
 
 
 def main():
-    # if torch.cuda.is_available():
-    #     if gpu_buffer:
-    #         buff_device = torch.device("cuda")
-    #         self.logger.log_msg("\nUsing GPU replay buffer\n")
-
-    #     if gpu_computation:
-    #         comp_device = torch.device("cuda")
-    #         self.logger.log_msg("\nUsing GPU computaion\n")
-    # else:
-    #     self.logger.log_msg("\nGPU unavailable\n")
-
-    # env = gym.make("PaperSteam-v0")
-    # ac_kwargs = dict(hidden_sizes=(32, 32), extractor_type=ArrayExtractor)
-    # rb_kwargs = dict(size=100000)
-
-    # with TensorboardLogger() as logger:
-    #     algo = SAC(
-    #         env,
-    #         ac_kwargs=ac_kwargs,
-    #         replay_buffer_type=ReplayBuffer,
-    #         rb_kwargs=rb_kwargs,
-    #         update_every=1,
-    #         update_after=100,
-    #         batch_size=256,
-    #         alpha="auto",
-    #         logger=logger,
-    #     )
-    #     algo.train(n_steps=20000, log_interval=100)
-
     # env = gym.make("Pendulum-v1")
     # policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
     # buffer = ReplayBuffer(env=env, size=20000)
@@ -98,8 +69,6 @@ def main():
     # algo.train(n_steps=10000, log_interval=100)
     # env.close()
 
-    import panda_gym
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     env = gym.make("PandaPush-v3")
@@ -110,7 +79,9 @@ def main():
         hidden_sizes=[512, 512, 512],
         extractor_type=DictExtractor,
     )
+    # policy.load_state_dict(torch.load("data/model_1m.pt"))
     policy.to(device)
+
     buffer = HerReplayBuffer(
         env=env,
         size=1_000_000,
@@ -137,11 +108,13 @@ def main():
         max_episode_len=100,
     )
     # algo.train(n_steps=3_000_000, log_interval=1000)
-    algo.batch_train(300)
+    algo.batch_train(100)
     env.close()
     logger.close()
 
-    # buffer.save(Path("data/her_buffer_1m.npz"))
+    torch.save(policy.state_dict(), "data/model_1m.pt")
+
+    # buffer.save(Path("data/her_buffer.npz"))
 
     env = gym.make("PandaPush-v3", render_mode="human")
     test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1 / 30)
