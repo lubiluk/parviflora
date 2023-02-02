@@ -411,7 +411,7 @@ class SAC:
                     idxs = torch.randperm(n_samples)
                     prgs.set_description(f"Epoch {epoch}")
 
-                start = t
+                start = t * batch_size
                 end = min(start + batch_size, n_samples)
                 batch_idx = idxs[start:end]
                 batch = self.buffer.batch(batch_idx)
