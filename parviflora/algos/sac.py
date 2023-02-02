@@ -307,6 +307,9 @@ class SAC:
             alpha_loss.backward()
             self.alpha_optimizer.step()
             self.alpha = alpha
+            alpha_loss = alpha_loss
+        else:
+            alpha_loss = np.array(0)
 
         return {
             "q": loss_q.item(),
@@ -413,10 +416,15 @@ class SAC:
                     idxs = torch.randperm(n_samples)
                     prgs.set_description(f"Epoch {epoch}")
 
+                self.buffer.size = t * self.batch_size
                 start = (t % epoch_steps) * batch_size
                 end = min(start + batch_size, n_samples)
                 batch_idxs = idxs[start:end]
-                batch = self.buffer.batch(batch_idxs)
+                # batch = self.buffer.batch(batch_idxs)
+                if self.buffer.size < self.update_after:
+                    continue
+
+                batch = self.buffer.sample_batch(self.batch_size)
                 losses = self.update(data=batch)
                 self.logger.log_scalar("loss_q", losses["q"], t)
                 self.logger.log_scalar("loss_pi", losses["pi"], t)

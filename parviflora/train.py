@@ -84,12 +84,12 @@ def main():
 
     buffer = HerReplayBuffer(
         env=env,
-        size=4_000_000,
+        size=300_000*5,
         n_sampled_goal=4,
         goal_selection_strategy="future",
         device=device,
     )
-    buffer.load("data/her_buffer_1m_all.npz")
+    # buffer.load("data/her_buffer_1m_all.npz")
     logger = TensorboardLogger()
     logger.open()
 
@@ -101,22 +101,23 @@ def main():
         update_after=1000,
         batch_size=256,
         alpha="auto",
+        # alpha=0.05,
         gamma=0.95,
         # polyak=0.95,
         lr=7e-4,
         logger=logger,
         max_episode_len=100,
     )
-    # algo.train(n_steps=1_000_000, log_interval=1000)
-    algo.batch_train(100)
-    # env.close()
+    algo.train(n_steps=300_000, log_interval=1000)
+    # algo.batch_train(1)
+    env.close()
     logger.close()
 
     policy.cpu()
-    torch.save(policy.state_dict(), "data/model_1m_batch.pt")
-    # buffer.save(Path("data/her_buffer_1m_all.npz"))
+    torch.save(policy.state_dict(), "data/model_300k_ref.pt")
+    buffer.save(Path("data/her_buffer_300k_all.npz"))
 
-    # env = gym.make("PandaPush-v3", render_mode="human")
+    env = gym.make("PandaPush-v3", render_mode="human")
     test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1 / 30)
     env.close()
     print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
