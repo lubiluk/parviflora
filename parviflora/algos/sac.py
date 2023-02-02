@@ -404,6 +404,8 @@ class SAC:
         total_steps = epoch_steps * n_epochs
         epoch = 0
 
+        # torch.autograd.set_detect_anomaly(True)
+
         with trange(total_steps) as prgs:
             for t in prgs:
                 if t % epoch_steps == 0:
@@ -411,10 +413,10 @@ class SAC:
                     idxs = torch.randperm(n_samples)
                     prgs.set_description(f"Epoch {epoch}")
 
-                start = t * batch_size
+                start = (t % epoch_steps) * batch_size
                 end = min(start + batch_size, n_samples)
-                batch_idx = idxs[start:end]
-                batch = self.buffer.batch(batch_idx)
+                batch_idxs = idxs[start:end]
+                batch = self.buffer.batch(batch_idxs)
                 losses = self.update(data=batch)
                 self.logger.log_scalar("loss_q", losses["q"], t)
                 self.logger.log_scalar("loss_pi", losses["pi"], t)
