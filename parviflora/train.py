@@ -89,7 +89,7 @@ def main():
         goal_selection_strategy="future",
         device=device,
     )
-    # buffer.load("data/her_buffer_1m.npz")
+    buffer.load("data/her_buffer_1m_all.npz")
     logger = TensorboardLogger()
     logger.open()
 
@@ -107,9 +107,9 @@ def main():
         logger=logger,
         max_episode_len=100,
     )
-    algo.train(n_steps=1_000_000, log_interval=1000)
-    # algo.batch_train(100)
-    env.close()
+    # algo.train(n_steps=1_000_000, log_interval=1000)
+    algo.batch_train(100)
+    # env.close()
     logger.close()
 
     policy.cpu()
