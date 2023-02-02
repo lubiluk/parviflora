@@ -113,8 +113,8 @@ def main():
     logger.close()
 
     policy.cpu()
-    torch.save(policy.state_dict(), "data/model_1m_ref.pt")
-    buffer.save(Path("data/her_buffer_1m_all.npz"))
+    torch.save(policy.state_dict(), "data/model_1m_batch.pt")
+    # buffer.save(Path("data/her_buffer_1m_all.npz"))
 
     # env = gym.make("PandaPush-v3", render_mode="human")
     test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1 / 30)
