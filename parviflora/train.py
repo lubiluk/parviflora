@@ -79,7 +79,7 @@ def main():
         hidden_sizes=[512, 512, 512],
         extractor_type=DictExtractor,
     )
-    # policy.load_state_dict(torch.load("data/model_1m.pt", map_location=torch.device('cpu')))
+    # policy.load_state_dict(torch.load("data/model_300k_ref.pt", map_location=torch.device('cpu')))
     policy.to(device)
 
     buffer = HerReplayBuffer(
@@ -89,7 +89,7 @@ def main():
         goal_selection_strategy="future",
         device=device,
     )
-    # buffer.load("data/her_buffer_1m_all.npz")
+    # buffer.load("data/her_buffer_300k_all.npz")
     logger = TensorboardLogger()
     logger.open()
 
@@ -109,7 +109,8 @@ def main():
         max_episode_len=100,
     )
     algo.train(n_steps=300_000, log_interval=1000)
-    # algo.batch_train(1)
+    # algo.batch_train(10)
+    # algo.batch_train_exact(300_000)
     env.close()
     logger.close()
 

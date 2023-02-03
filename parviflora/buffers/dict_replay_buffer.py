@@ -60,8 +60,8 @@ class DictReplayBuffer(BaseBuffer):
         }
         data_dict.update(
             {
-                f"observation[{k}]": v[: self.size].cpu().numpy()
-                for k, v in self.observations.items()
+                f"next_observation[{k}]": v[: self.size].cpu().numpy()
+                for k, v in self.next_observations.items()
             }
         )
 

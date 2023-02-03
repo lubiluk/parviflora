@@ -173,11 +173,12 @@ class SAC:
             # this will also throw an error for unexpected string
             self.target_entropy = float(self.target_entropy)
 
+        # Use the same device for alpha as for the policy
+        alpha_device = next(self.policy.parameters()).device
+
         # The entropy coefficient or entropy can be learned automatically
         # see Automating Entropy Adjustment for Maximum Entropy RL section
         # of https://arxiv.org/abs/1812.05905
-        # Use the same device as policy
-        alpha_device = next(self.policy.parameters()).device
         if isinstance(self.alpha, str) and self.alpha.startswith("auto"):
             # Default initial value of alpha when learned
             init_value = 1.0
@@ -416,17 +417,59 @@ class SAC:
                     idxs = torch.randperm(n_samples)
                     prgs.set_description(f"Epoch {epoch}")
 
-                self.buffer.size = t * self.batch_size
                 start = (t % epoch_steps) * batch_size
                 end = min(start + batch_size, n_samples)
                 batch_idxs = idxs[start:end]
-                # batch = self.buffer.batch(batch_idxs)
-                if self.buffer.size < self.update_after:
-                    continue
-
-                batch = self.buffer.sample_batch(self.batch_size)
+                batch = self.buffer.batch(batch_idxs)
                 losses = self.update(data=batch)
                 self.logger.log_scalar("loss_q", losses["q"], t)
                 self.logger.log_scalar("loss_pi", losses["pi"], t)
                 self.logger.log_scalar("loss_alpha", losses["alpha"], t)
                 self.logger.log_scalar("alpha", self.alpha, t)
+
+    def batch_train_exact(self, n_steps, log_interval=1000):
+        ep_ret, ep_len = 0, 0
+        test_ep_return = None
+
+        self.buffer.size = 0
+
+        with trange(n_steps) as prgs:
+            for t in prgs:
+                exp = self.buffer.batch([t])
+                r = exp["reward"][0]
+                ter = exp["terminated"][0]
+                tru = exp["truncated"][0]
+
+                ep_ret += r
+                ep_len += 1
+
+                self.buffer.size += 1
+
+                # End of trajectory handling
+                if (ter or tru) or (ep_len == self.max_episode_len):
+                    self.logger.log_scalar("ep_return", ep_ret, t)
+                    self.logger.log_scalar("ep_length", ep_len, t)
+                    self.buffer.size += (ep_len - 1) * 4
+                    ep_ret, ep_len = 0, 0
+
+                # Update handling
+                if t >= self.update_after and t % self.update_every == 0:
+                    for j in range(self.n_updates or self.update_every):
+                        batch = self.buffer.sample_batch(self.batch_size)
+                        losses = self.update(data=batch)
+                        self.logger.log_scalar("loss_q", losses["q"], t)
+                        self.logger.log_scalar("loss_pi", losses["pi"], t)
+                        self.logger.log_scalar("loss_alpha", losses["alpha"], t)
+                        self.logger.log_scalar("alpha", self.alpha, t)
+
+                # End of epoch handling
+                if t % log_interval == 0:
+                    # Test the performance of the deterministic version of the agent.
+                    test_ep_ret, test_ep_length = self.test(
+                        self.env, self.n_test_episodes
+                    )
+                    prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
+                    self.logger.log_scalar("test_ep_return", test_ep_ret, t)
+                    self.logger.log_scalar("test_ep_length", test_ep_length, t)
+
+        return test_ep_return
