@@ -107,16 +107,17 @@ def main():
         lr=7e-4,
         logger=logger,
         max_episode_len=100,
+        start_steps=300_000
     )
     algo.train(n_steps=300_000, log_interval=1000)
-    # algo.batch_train(10)
-    # algo.batch_train_exact(300_000)
+    # algo.train_offline(100)
+    # algo.train_offline_exact(300_000)
     env.close()
     logger.close()
 
     policy.cpu()
-    torch.save(policy.state_dict(), "data/model_300k_ref.pt")
-    buffer.save(Path("data/her_buffer_300k_all.npz"))
+    torch.save(policy.state_dict(), "data/model_300k_rand.pt")
+    buffer.save(Path("data/her_buffer_300k_rand.npz"))
 
     env = gym.make("PandaPush-v3", render_mode="human")
     test_rew, test_ep_len = algo.test(env, n_episodes=50, sleep=1 / 30)

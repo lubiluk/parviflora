@@ -400,7 +400,7 @@ class SAC:
 
         return test_ep_return
 
-    def batch_train(self, n_epochs):
+    def train_offline(self, n_epochs):
         batch_size = self.batch_size
         n_samples = self.buffer.size
 
@@ -427,7 +427,7 @@ class SAC:
                 self.logger.log_scalar("loss_alpha", losses["alpha"], t)
                 self.logger.log_scalar("alpha", self.alpha, t)
 
-    def batch_train_exact(self, n_steps, log_interval=1000):
+    def train_offline_exact(self, n_steps, log_interval=1000):
         ep_ret, ep_len = 0, 0
         test_ep_return = None
 
