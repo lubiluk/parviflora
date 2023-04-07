@@ -102,7 +102,7 @@ class MlpPolicy(nn.Module):
         action_space: spaces.Space,
         hidden_sizes: Iterable[int] = (256, 256),
         activation: nn.Module = nn.ReLU,
-        extractor_type: BaseExtractor = ArrayExtractor,
+        extractor_type: BaseExtractor.type = ArrayExtractor,
         clip_action: bool = True,
     ):
         super().__init__()
