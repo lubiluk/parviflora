@@ -58,7 +58,7 @@ class HerReplayBuffer(DictReplayBuffer):
 
     def _get_current_episode(self):
         if self.ep_start_ptr == self._ptr:
-            return [self._ptr]
+            idxs = [self._ptr]
 
         if self.ep_start_ptr <= self._ptr:
             idxs = np.arange(self.ep_start_ptr, self._ptr)
