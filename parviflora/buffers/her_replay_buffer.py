@@ -98,7 +98,7 @@ class HerReplayBuffer(DictReplayBuffer):
                     )
 
                 sel_agoal = ep["next_observation"]["achieved_goal"][sel_idx]
-                info = ep["info"][sel_idx]
+                info = ep["info"][sel_idx][0]
                 terminated = ep["terminated"][sel_idx]
                 truncated = ep["truncated"][sel_idx]
                 np_sel_agoal = sel_agoal.cpu().numpy()
