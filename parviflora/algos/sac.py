@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
-from tqdm import trange
+from tqdm import tqdm, trange
 
 from ..buffers.base_buffer import BaseBuffer
 from ..buffers.replay_buffer import ReplayBuffer
@@ -16,6 +16,15 @@ from ..loggers.base_logger import BaseLogger
 from ..loggers.silent_logger import SilentLogger
 from ..policies.mlp_policy import MlpPolicy
 from ..utils.training import count_vars
+
+
+class TrainingState:
+    def __init__(self) -> None:
+        self.ep_ret, self.ep_len = 0, 0
+        self.test_ep_return = None
+        self.observation = None
+        self.action = None
+        self.step = 0
 
 
 class SAC:
@@ -342,63 +351,102 @@ class SAC:
         return np.array(ep_returns).mean(), np.array(ep_lengths).mean()
 
     def train(self, n_steps, log_interval=1000):
-        # Prepare for interaction with environment
-        (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
-        self.buffer.start_episode()
-        test_ep_return = None
+        self.train_begin()
 
         # Main loop: collect experience in env and update/log each epoch
         with trange(n_steps) as prgs:
             for t in prgs:
-                # Until start_steps have elapsed, randomly sample actions
-                # from a uniform distribution for better exploration. Afterwards,
-                # use the learned policy.
-                if t > self.start_steps:
-                    a = self.policy.act(o)
-                else:
-                    a = self.env.action_space.sample()
+                a = self.train_get_action()
 
                 # Step the env
                 o2, r, ter, tru, i = self.env.step(a)
-                ep_ret += r
-                ep_len += 1
 
-                # Store experience to replay buffer
-                self.buffer.store(o, a, r, o2, ter, tru, i)
-
-                # Super critical, easy to overlook step: make sure to update
-                # most recent observation!
-                o = o2
-
-                # End of trajectory handling
-                if (ter or tru) or (ep_len == self.max_episode_len):
-                    self.logger.log_scalar("ep_return", ep_ret, t)
-                    self.logger.log_scalar("ep_length", ep_len, t)
-                    self.buffer.end_episode()
-                    (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
-                    self.buffer.start_episode()
-
-                # Update handling
-                if t >= self.update_after and t % self.update_every == 0:
-                    for j in range(self.n_updates or self.update_every):
-                        batch = self.buffer.sample_batch(self.batch_size)
-                        losses = self.update(data=batch)
-                        self.logger.log_scalar("loss_q", losses["q"], t)
-                        self.logger.log_scalar("loss_pi", losses["pi"], t)
-                        self.logger.log_scalar("loss_alpha", losses["alpha"], t)
-                        self.logger.log_scalar("alpha", self.alpha, t)
+                self.train_step(o2, r, ter, tru, i)
 
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    test_ep_ret, test_ep_length = self.test(
-                        self.env, self.n_test_episodes
-                    )
-                    prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
+                    test_ep_ret, test_ep_length = self.test(self.env, self.n_test_episodes)
+
                     self.logger.log_scalar("test_ep_return", test_ep_ret, t)
                     self.logger.log_scalar("test_ep_length", test_ep_length, t)
 
-        return test_ep_return
+                    if prgs is not None:
+                        prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
+
+        return self._training_state.test_ep_return
+
+    def train_begin(self):
+        # Prepare for interaction with environment
+        o, i = self.env.reset()
+        self.buffer.start_episode()
+
+        # Save the state
+        self._training_state = TrainingState()
+        self._training_state.observation = o
+        self._training_state.info = i
+
+    def train_get_action(self):
+        # Load from the state
+        t = self._training_state.step
+        o = self._training_state.observation
+        # Until start_steps have elapsed, randomly sample actions
+        # from a uniform distribution for better exploration. Afterwards,
+        # use the learned policy.
+        if t > self.start_steps:
+            a = self.policy.act(o)
+        else:
+            a = self.env.action_space.sample()
+
+        # Save to the state
+        self._training_state.action = a
+
+        return a
+
+    def train_step(self, obs, rew, ter, tru, info) -> None:
+        # Load from the state
+        o = self._training_state.observation
+        a = self._training_state.action
+        ep_ret = self._training_state.ep_ret
+        ep_len = self._training_state.ep_len
+        t = self._training_state.step
+
+        # Assign from arguments
+        o2 = obs
+        r = rew
+        i = info
+
+        ep_ret += r
+        ep_len += 1
+
+        # Store experience to replay buffer
+        self.buffer.store(o, a, r, o2, ter, tru, i)
+
+        # Super critical, easy to overlook step: make sure to update
+        # most recent observation!
+        o = o2
+
+        # End of trajectory handling
+        if (ter or tru) or (ep_len == self.max_episode_len):
+            self.logger.log_scalar("ep_return", ep_ret, t)
+            self.logger.log_scalar("ep_length", ep_len, t)
+            self.buffer.end_episode()
+            (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
+            self.buffer.start_episode()
+
+        # Update handling
+        if t >= self.update_after and t % self.update_every == 0:
+            for j in range(self.n_updates or self.update_every):
+                batch = self.buffer.sample_batch(self.batch_size)
+                losses = self.update(data=batch)
+                self.logger.log_scalar("loss_q", losses["q"], t)
+                self.logger.log_scalar("loss_pi", losses["pi"], t)
+                self.logger.log_scalar("loss_alpha", losses["alpha"], t)
+                self.logger.log_scalar("alpha", self.alpha, t)
+
+        # Save to state
+        self._training_state.observation = o
+        self._training_state.step = t + 1
 
     def train_offline(self, n_epochs):
         batch_size = self.batch_size
