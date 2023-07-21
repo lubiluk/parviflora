@@ -27,6 +27,15 @@ class TrainingState:
         self.step = 0
 
 
+class TestState:
+    def __init__(self) -> None:
+        self.ep_ret, self.ep_len = 0, 0
+        self.ep_returns = []
+        self.ep_lengths = []
+        self.observation = None
+        self.action = None
+
+
 class SAC:
     """Soft Actor-Critic (SAC)"""
 
@@ -350,8 +359,139 @@ class SAC:
 
         return np.array(ep_returns).mean(), np.array(ep_lengths).mean()
 
+    def test_passively(
+        self, env: gym.Env, n_episodes: int, sleep: float = 0
+    ) -> Tuple[float, float]:
+        self.test_begin()
+
+        for _ in range(n_episodes):
+            o, i = env.reset()
+            d = False
+            self.test_start_episode(o, i)
+            while not (d or (self._test_state.ep_len == self.max_episode_len)):
+                # Take deterministic actions at test time
+                act = self.test_get_action()
+                o, r, ter, tru, i = env.step(act)
+                self.test_set_result(o, r, ter, tru, i)
+                if sleep > 0:
+                    time.sleep(sleep)
+                d = ter or tru
+
+            self.test_end_episode()
+
+        return (
+            np.array(self._test_state.ep_returns).mean(),
+            np.array(self._test_state.ep_lengths).mean(),
+        )
+
+    def test_begin(self):
+        self.policy.eval()
+        self._test_state = TestState()
+
+    def test_start_episode(self, obs, inf):
+        self._test_state.observation = obs
+        self._test_state.ep_len = 0
+        self._test_state.ep_ret = 0
+
+    def test_get_action(self):
+        # Load from the state
+        o = self._test_state.observation
+
+        a = self.policy.act(o, deterministic=True)
+
+        # Save to the state
+        self._test_state.action = a
+
+        return a
+
+    def test_set_result(self, obs, rew, ter, tru, info):
+        # Load from the state
+        ep_ret = self._test_state.ep_ret
+        ep_len = self._test_state.ep_len
+
+        # Assign from arguments
+        o = obs
+        r = rew
+
+        ep_ret += r
+        ep_len += 1
+
+        # Save to the state
+        self._test_state.ep_ret = ep_ret
+        self._test_state.ep_len = ep_len
+        self._test_state.observation = o
+
+    def test_end_episode(self):
+        ep_ret = self._test_state.ep_ret
+        ep_len = self._test_state.ep_len
+
+        self._test_state.ep_returns.append(ep_ret)
+        self._test_state.ep_lengths.append(ep_len)
+
     def train(self, n_steps, log_interval=1000):
+        # Prepare for interaction with environment
+        (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
+        self.buffer.start_episode()
+        test_ep_return = None
+
+        # Main loop: collect experience in env and update/log each epoch
+        with trange(n_steps) as prgs:
+            for t in prgs:
+                # Until start_steps have elapsed, randomly sample actions
+                # from a uniform distribution for better exploration. Afterwards,
+                # use the learned policy.
+                if t > self.start_steps:
+                    a = self.policy.act(o)
+                else:
+                    a = self.env.action_space.sample()
+
+                # Step the env
+                o2, r, ter, tru, i = self.env.step(a)
+                ep_ret += r
+                ep_len += 1
+
+                # Store experience to replay buffer
+                self.buffer.store(o, a, r, o2, ter, tru, i)
+
+                # Super critical, easy to overlook step: make sure to update
+                # most recent observation!
+                o = o2
+
+                # End of trajectory handling
+                if (ter or tru) or (ep_len == self.max_episode_len):
+                    self.logger.log_scalar("ep_return", ep_ret, t)
+                    self.logger.log_scalar("ep_length", ep_len, t)
+                    self.buffer.end_episode()
+                    (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
+                    self.buffer.start_episode()
+
+                # Update handling
+                if t >= self.update_after and t % self.update_every == 0:
+                    for j in range(self.n_updates or self.update_every):
+                        batch = self.buffer.sample_batch(self.batch_size)
+                        losses = self.update(data=batch)
+                        self.logger.log_scalar("loss_q", losses["q"], t)
+                        self.logger.log_scalar("loss_pi", losses["pi"], t)
+                        self.logger.log_scalar("loss_alpha", losses["alpha"], t)
+                        self.logger.log_scalar("alpha", self.alpha, t)
+
+                # End of epoch handling
+                if t % log_interval == 0:
+                    # Test the performance of the deterministic version of the agent.
+                    test_ep_ret, test_ep_length = self.test(
+                        self.env, self.n_test_episodes
+                    )
+                    prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
+                    self.logger.log_scalar("test_ep_return", test_ep_ret, t)
+                    self.logger.log_scalar("test_ep_length", test_ep_length, t)
+
+        return test_ep_return
+
+    def train_passively(self, n_steps, log_interval=1000):
         self.train_begin()
+
+        o, i = self.env.reset()
+        self.train_start_episode(o, i)
 
         # Main loop: collect experience in env and update/log each epoch
         with trange(n_steps) as prgs:
@@ -361,12 +501,21 @@ class SAC:
                 # Step the env
                 o2, r, ter, tru, i = self.env.step(a)
 
-                self.train_step(o2, r, ter, tru, i)
+                self.train_set_result(o2, r, ter, tru, i)
+
+                if (ter or tru) or (
+                    self._training_state.ep_len == self.max_episode_len
+                ):
+                    self.train_end_episode()
+                    o, i = self.env.reset()
+                    self.train_start_episode(o, i)
 
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    test_ep_ret, test_ep_length = self.test(self.env, self.n_test_episodes)
+                    test_ep_ret, test_ep_length = self.test(
+                        self.env, self.n_test_episodes
+                    )
 
                     self.logger.log_scalar("test_ep_return", test_ep_ret, t)
                     self.logger.log_scalar("test_ep_length", test_ep_length, t)
@@ -377,14 +526,14 @@ class SAC:
         return self._training_state.test_ep_return
 
     def train_begin(self):
-        # Prepare for interaction with environment
-        o, i = self.env.reset()
-        self.buffer.start_episode()
-
         # Save the state
         self._training_state = TrainingState()
-        self._training_state.observation = o
-        self._training_state.info = i
+
+    def train_start_episode(self, obs, info):
+        self.buffer.start_episode()
+        self._training_state.observation = obs
+        self._training_state.ep_len = 0
+        self._training_state.ep_ret = 0
 
     def train_get_action(self):
         # Load from the state
@@ -403,7 +552,7 @@ class SAC:
 
         return a
 
-    def train_step(self, obs, rew, ter, tru, info) -> None:
+    def train_set_result(self, obs, rew, ter, tru, info):
         # Load from the state
         o = self._training_state.observation
         a = self._training_state.action
@@ -426,14 +575,6 @@ class SAC:
         # most recent observation!
         o = o2
 
-        # End of trajectory handling
-        if (ter or tru) or (ep_len == self.max_episode_len):
-            self.logger.log_scalar("ep_return", ep_ret, t)
-            self.logger.log_scalar("ep_length", ep_len, t)
-            self.buffer.end_episode()
-            (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
-            self.buffer.start_episode()
-
         # Update handling
         if t >= self.update_after and t % self.update_every == 0:
             for j in range(self.n_updates or self.update_every):
@@ -447,6 +588,18 @@ class SAC:
         # Save to state
         self._training_state.observation = o
         self._training_state.step = t + 1
+        self._training_state.ep_ret = ep_ret
+        self._training_state.ep_len = ep_len
+
+    def train_end_episode(self):
+        t = self._training_state.step
+        ep_ret = self._training_state.ep_ret
+        ep_len = self._training_state.ep_len
+
+        # End of trajectory handling
+        self.logger.log_scalar("ep_return", ep_ret, t)
+        self.logger.log_scalar("ep_length", ep_len, t)
+        self.buffer.end_episode()
 
     def train_offline(self, n_epochs):
         batch_size = self.batch_size
