@@ -103,7 +103,7 @@ class HerReplayBuffer(DictReplayBuffer):
                 truncated = ep["truncated"][sel_idx]
                 np_sel_agoal = sel_agoal.cpu().numpy()
 
-                reward = self.env.compute_reward(np_agoal, np_sel_agoal, info)
+                reward = self.env.unwrapped.compute_reward(np_agoal, np_sel_agoal, info)
 
                 observation["desired_goal"] = sel_agoal
                 next_observation["desired_goal"] = sel_agoal
