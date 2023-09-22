@@ -129,3 +129,11 @@ class BaseBuffer(ABC):
     @abstractmethod
     def _load_observations(self, data_dict: dict[str, NDArray]) -> None:
         ...
+
+    def clear(self):
+        self.actions = torch.zeros_like(self.actions)
+        self.rewards = torch.zeros_like(self.rewards)
+        self.terminations = torch.zeros_like(self.terminations)
+        self.truncations = torch.zeros_like(self.truncations)
+        self.infos = np.empty_like(self.infos)
+        self._ptr, self.size = 0, 0

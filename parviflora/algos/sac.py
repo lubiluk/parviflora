@@ -337,7 +337,11 @@ class SAC:
         }
 
     def test(
-        self, env: gym.Env, n_episodes: int, sleep: float = 0
+        self,
+        env: gym.Env,
+        n_episodes: int,
+        sleep: float = 0,
+        store_experience: bool = False,
     ) -> Tuple[float, float]:
         ep_returns = []
         ep_lengths = []
@@ -345,21 +349,38 @@ class SAC:
 
         for _ in range(n_episodes):
             (o, i), d, ep_ret, ep_len = env.reset(), False, 0, 0
+
+            if store_experience:
+                self.buffer.start_episode()
+
             while not (d or (ep_len == self.max_episode_len)):
                 # Take deterministic actions at test time
-                o, r, ter, tru, i = env.step(self.policy.act(o, True))
+                a = self.policy.act(o, True)
+
+                o2, r, ter, tru, i = env.step(a)
+
+                if store_experience:
+                    # Store experience to replay buffer
+                    self.buffer.store(o, a, r, o2, ter, tru, i)
+
+                o = o2
+
                 if sleep > 0:
                     time.sleep(sleep)
+
                 d = ter or tru
                 ep_ret += r
                 ep_len += 1
+
+            if store_experience:
+                self.buffer.end_episode()
 
             ep_returns.append(ep_ret)
             ep_lengths.append(ep_len)
 
         return np.array(ep_returns).mean(), np.array(ep_lengths).mean()
 
-    def test_passively(
+    def _test_passively(
         self, env: gym.Env, n_episodes: int, sleep: float = 0
     ) -> Tuple[float, float]:
         self.test_begin()
@@ -370,9 +391,9 @@ class SAC:
             self.test_start_episode(o, i)
             while not (d or (self._test_state.ep_len == self.max_episode_len)):
                 # Take deterministic actions at test time
-                act = self.test_get_action()
+                act = self.test_ask_action()
                 o, r, ter, tru, i = env.step(act)
-                self.test_set_result(o, r, ter, tru, i)
+                self.test_tell_result(o, r, ter, tru, i)
                 if sleep > 0:
                     time.sleep(sleep)
                 d = ter or tru
@@ -393,7 +414,7 @@ class SAC:
         self._test_state.ep_len = 0
         self._test_state.ep_ret = 0
 
-    def test_get_action(self):
+    def test_ask_action(self):
         # Load from the state
         o = self._test_state.observation
 
@@ -404,7 +425,7 @@ class SAC:
 
         return a
 
-    def test_set_result(self, obs, rew, ter, tru, info):
+    def test_tell_result(self, obs, rew, ter, tru, info):
         # Load from the state
         ep_ret = self._test_state.ep_ret
         ep_len = self._test_state.ep_len
@@ -487,7 +508,8 @@ class SAC:
 
         return test_ep_return
 
-    def train_passively(self, n_steps, log_interval=1000):
+    def _train_passively(self, n_steps, log_interval=1000):
+        """Uses the ask/tell interface"""
         self.train_begin()
 
         o, i = self.env.reset()
@@ -496,12 +518,12 @@ class SAC:
         # Main loop: collect experience in env and update/log each epoch
         with trange(n_steps) as prgs:
             for t in prgs:
-                a = self.train_get_action()
+                a = self.train_ask_action()
 
                 # Step the env
                 o2, r, ter, tru, i = self.env.step(a)
 
-                self.train_set_result(o2, r, ter, tru, i)
+                self.train_tell_result(o2, r, ter, tru, i)
 
                 if (ter or tru) or (
                     self._training_state.ep_len == self.max_episode_len
@@ -535,7 +557,7 @@ class SAC:
         self._training_state.ep_len = 0
         self._training_state.ep_ret = 0
 
-    def train_get_action(self):
+    def train_ask_action(self):
         # Load from the state
         t = self._training_state.step
         o = self._training_state.observation
@@ -552,7 +574,7 @@ class SAC:
 
         return a
 
-    def train_set_result(self, obs, rew, ter, tru, info):
+    def train_tell_result(self, obs, rew, ter, tru, info):
         # Load from the state
         o = self._training_state.observation
         a = self._training_state.action
@@ -628,7 +650,8 @@ class SAC:
                 self.logger.log_scalar("loss_alpha", losses["alpha"], t)
                 self.logger.log_scalar("alpha", self.alpha, t)
 
-    def train_offline_exact(self, n_steps, log_interval=1000):
+    def _train_offline_exact(self, n_steps, log_interval=1000):
+        """Reflects 1:1 online learning but is offline"""
         ep_ret, ep_len = 0, 0
         test_ep_return = None
 

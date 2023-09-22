@@ -35,11 +35,12 @@ def main():
         logger=logger,
     )
 
-    algo.train(n_steps=20000, log_interval=1000)
+    algo.train(n_steps=200, log_interval=1000)
     env.close()
 
     env = gym.make("Pendulum-v1", render_mode="human")
-    test_rew, test_ep_len = algo.test(env, n_episodes=5)
+    algo.buffer.clear()
+    test_rew, test_ep_len = algo.test(env, n_episodes=5, store_experience=True)
     print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
     env.close()
 
@@ -58,7 +59,7 @@ def main():
         logger=logger,
     )
 
-    algo.train_passively(n_steps=20000, log_interval=1000)
+    algo._train_passively(n_steps=20000, log_interval=1000)
     env.close()
 
     env = gym.make("Pendulum-v1", render_mode="human")
