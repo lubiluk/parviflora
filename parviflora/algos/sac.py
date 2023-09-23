@@ -342,16 +342,23 @@ class SAC:
         n_episodes: int,
         sleep: float = 0,
         store_experience: bool = False,
+        render: bool = False
     ) -> Tuple[float, float]:
         ep_returns = []
         ep_lengths = []
         self.policy.eval()
+        
+        if render:
+            frames = []
 
         for _ in range(n_episodes):
             (o, i), d, ep_ret, ep_len = env.reset(), False, 0, 0
 
             if store_experience:
                 self.buffer.start_episode()
+
+            if render:
+                frames.append([])
 
             while not (d or (ep_len == self.max_episode_len)):
                 # Take deterministic actions at test time
@@ -364,6 +371,10 @@ class SAC:
                     self.buffer.store(o, a, r, o2, ter, tru, i)
 
                 o = o2
+
+                if render:
+                    frame = env.render()
+                    frames[-1].append(frame)
 
                 if sleep > 0:
                     time.sleep(sleep)
@@ -378,7 +389,12 @@ class SAC:
             ep_returns.append(ep_ret)
             ep_lengths.append(ep_len)
 
-        return np.array(ep_returns).mean(), np.array(ep_lengths).mean()
+        ret_mean, len_mean = np.array(ep_returns).mean(), np.array(ep_lengths).mean()
+
+        if render:
+            return ret_mean, len_mean, frames
+
+        return ret_mean, len_mean
 
     def _test_passively(
         self, env: gym.Env, n_episodes: int, sleep: float = 0
