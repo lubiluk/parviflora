@@ -343,9 +343,10 @@ class SAC:
         sleep: float = 0,
         store_experience: bool = False,
         render: bool = False
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, float]:
         ep_returns = []
         ep_lengths = []
+        ep_successes = []
         self.policy.eval()
         
         if render:
@@ -389,12 +390,15 @@ class SAC:
             ep_returns.append(ep_ret)
             ep_lengths.append(ep_len)
 
-        ret_mean, len_mean = np.array(ep_returns).mean(), np.array(ep_lengths).mean()
+            if "is_success" in i:
+                ep_successes.append(i)
+
+        ret_mean, len_mean, success_rate = np.array(ep_returns).mean(), np.array(ep_lengths).mean(), np.array(ep_successes).mean()
 
         if render:
-            return ret_mean, len_mean, frames
+            return ret_mean, len_mean, success_rate, frames
 
-        return ret_mean, len_mean
+        return ret_mean, len_mean, success_rate
 
     def _test_passively(
         self, env: gym.Env, n_episodes: int, sleep: float = 0
@@ -573,7 +577,7 @@ class SAC:
         self._training_state.ep_len = 0
         self._training_state.ep_ret = 0
 
-    def train_ask_action(self):
+    def train_ask_action(self, deterministic=False):
         # Load from the state
         t = self._training_state.step
         o = self._training_state.observation
@@ -581,7 +585,7 @@ class SAC:
         # from a uniform distribution for better exploration. Afterwards,
         # use the learned policy.
         if t > self.start_steps:
-            a = self.policy.act(o)
+            a = self.policy.act(o, deterministic=deterministic)
         else:
             a = self.env.action_space.sample()
 
