@@ -35,7 +35,11 @@ def main():
         logger=logger,
     )
 
-    algo.train(n_steps=200, log_interval=1000)
+    def callback(results):
+        print("yay", results)
+        return True
+
+    algo.train(n_steps=200, log_interval=10000, callback=callback)
     env.close()
 
     env = gym.make("Pendulum-v1", render_mode="human")

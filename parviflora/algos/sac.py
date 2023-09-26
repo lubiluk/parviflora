@@ -16,6 +16,7 @@ from ..loggers.base_logger import BaseLogger
 from ..loggers.silent_logger import SilentLogger
 from ..policies.mlp_policy import MlpPolicy
 from ..utils.training import count_vars
+from ..utils.testing import TestResutls
 
 
 class TrainingState:
@@ -342,13 +343,13 @@ class SAC:
         n_episodes: int,
         sleep: float = 0,
         store_experience: bool = False,
-        render: bool = False
-    ) -> Tuple[float, float, float]:
+        render: bool = False,
+    ) -> TestResutls:
         ep_returns = []
         ep_lengths = []
         ep_successes = []
         self.policy.eval()
-        
+
         if render:
             frames = []
 
@@ -391,14 +392,20 @@ class SAC:
             ep_lengths.append(ep_len)
 
             if "is_success" in i:
-                ep_successes.append(i)
+                ep_successes.append(i["is_success"])
 
-        ret_mean, len_mean, success_rate = np.array(ep_returns).mean(), np.array(ep_lengths).mean(), np.array(ep_successes).mean()
+        results = TestResutls(
+            mean_ep_ret=np.array(ep_returns).mean(),
+            mean_ep_len=np.array(ep_lengths).mean(),
+        )
+
+        if len(ep_successes) > 0:
+            results.success_rate = np.array(ep_successes).mean()
 
         if render:
-            return ret_mean, len_mean, success_rate, frames
+            results.ep_frames = frames
 
-        return ret_mean, len_mean, success_rate
+        return results
 
     def _test_passively(
         self, env: gym.Env, n_episodes: int, sleep: float = 0
@@ -469,7 +476,7 @@ class SAC:
         self._test_state.ep_returns.append(ep_ret)
         self._test_state.ep_lengths.append(ep_len)
 
-    def train(self, n_steps, log_interval=1000):
+    def train(self, n_steps, log_interval=1000, callback=None):
         # Prepare for interaction with environment
         (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
         self.buffer.start_episode()
@@ -519,12 +526,17 @@ class SAC:
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    test_ep_ret, test_ep_length = self.test(
+                    results = self.test(
                         self.env, self.n_test_episodes
                     )
-                    prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
-                    self.logger.log_scalar("test_ep_return", test_ep_ret, t)
-                    self.logger.log_scalar("test_ep_length", test_ep_length, t)
+                    prgs.set_description(f"test_ep_return {results.mean_ep_ret:.3g}")
+                    self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
+                    self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
+                    
+                    if callback is not None:
+                        stop = callback(results)
+                        if stop: 
+                            break
 
         return test_ep_return
 
@@ -555,12 +567,12 @@ class SAC:
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    test_ep_ret, test_ep_length = self.test(
+                    results = self.test(
                         self.env, self.n_test_episodes
                     )
 
-                    self.logger.log_scalar("test_ep_return", test_ep_ret, t)
-                    self.logger.log_scalar("test_ep_length", test_ep_length, t)
+                    self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
+                    self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
 
                     if prgs is not None:
                         prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
@@ -709,11 +721,11 @@ class SAC:
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    test_ep_ret, test_ep_length = self.test(
+                    results = self.test(
                         self.env, self.n_test_episodes
                     )
-                    prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
-                    self.logger.log_scalar("test_ep_return", test_ep_ret, t)
-                    self.logger.log_scalar("test_ep_length", test_ep_length, t)
+                    prgs.set_description(f"test_ep_return {results.mean_ep_ret:.3g}")
+                    self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
+                    self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
 
         return test_ep_return
