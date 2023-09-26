@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 
 @dataclass
-class TestResutls:
+class TestResults:
     mean_ep_ret: float
     mean_ep_len: float
     success_rate: Optional[float] = None

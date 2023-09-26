@@ -16,7 +16,7 @@ from ..loggers.base_logger import BaseLogger
 from ..loggers.silent_logger import SilentLogger
 from ..policies.mlp_policy import MlpPolicy
 from ..utils.training import count_vars
-from ..utils.testing import TestResutls
+from ..utils.testing import TestResults
 
 
 class TrainingState:
@@ -344,7 +344,8 @@ class SAC:
         sleep: float = 0,
         store_experience: bool = False,
         render: bool = False,
-    ) -> TestResutls:
+        up_to_buffer_size=False,
+    ) -> TestResults:
         ep_returns = []
         ep_lengths = []
         ep_successes = []
@@ -394,7 +395,10 @@ class SAC:
             if "is_success" in i:
                 ep_successes.append(i["is_success"])
 
-        results = TestResutls(
+            if up_to_buffer_size and self.buffer.size == self.buffer.max_size:
+                break
+
+        results = TestResults(
             mean_ep_ret=np.array(ep_returns).mean(),
             mean_ep_len=np.array(ep_lengths).mean(),
         )
@@ -476,7 +480,7 @@ class SAC:
         self._test_state.ep_returns.append(ep_ret)
         self._test_state.ep_lengths.append(ep_len)
 
-    def train(self, n_steps, log_interval=1000, callback=None):
+    def train(self, n_steps, log_interval=1000, callbacks=[]):
         # Prepare for interaction with environment
         (o, i), ep_ret, ep_len = self.env.reset(), 0, 0
         self.buffer.start_episode()
@@ -526,17 +530,18 @@ class SAC:
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    results = self.test(
-                        self.env, self.n_test_episodes
-                    )
+                    results = self.test(self.env, self.n_test_episodes)
                     prgs.set_description(f"test_ep_return {results.mean_ep_ret:.3g}")
                     self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
                     self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
-                    
-                    if callback is not None:
-                        stop = callback(results)
-                        if stop: 
+
+                    for c in callbacks:
+                        stop = c(results)
+                        if stop:
                             break
+
+                    if stop:
+                        break
 
         return test_ep_return
 
@@ -567,9 +572,7 @@ class SAC:
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    results = self.test(
-                        self.env, self.n_test_episodes
-                    )
+                    results = self.test(self.env, self.n_test_episodes)
 
                     self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
                     self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
@@ -721,11 +724,39 @@ class SAC:
                 # End of epoch handling
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
-                    results = self.test(
-                        self.env, self.n_test_episodes
-                    )
+                    results = self.test(self.env, self.n_test_episodes)
                     prgs.set_description(f"test_ep_return {results.mean_ep_ret:.3g}")
                     self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
                     self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
 
         return test_ep_return
+    
+    def collect_experience(
+        self,
+        env: gym.Env,
+        n_steps: int,
+    ) -> TestResults:
+        # Prepare for interaction with environment
+        self.buffer.clear()
+        self.policy.eval()
+        (o, i), ep_ret, ep_len = env.reset(), 0, 0
+        self.buffer.start_episode()
+
+        with trange(n_steps) as prgs:
+            for t in prgs:
+                a = self.policy.act(o, True)
+                # Step the env
+                o2, r, ter, tru, i = env.step(a)
+                # Store experience to replay buffer
+                self.buffer.store(o, a, r, o2, ter, tru, i)
+                # Super critical, easy to overlook step: make sure to update
+                # most recent observation!
+                o = o2
+
+                # End of trajectory handling
+                if (ter or tru) or (ep_len == self.max_episode_len):
+                    self.buffer.end_episode()
+                    (o, i), ep_ret, ep_len = env.reset(), 0, 0
+                    self.buffer.start_episode()
+
+        return self.buffer
