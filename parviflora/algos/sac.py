@@ -535,6 +535,8 @@ class SAC:
                     self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
                     self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
 
+                    stop = False
+
                     for c in callbacks:
                         stop = c(results)
                         if stop:
