@@ -732,7 +732,7 @@ class SAC:
                     self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
 
         return test_ep_return
-    
+
     def collect_experience(
         self,
         env: gym.Env,
@@ -762,3 +762,19 @@ class SAC:
                     self.buffer.start_episode()
 
         return self.buffer
+
+    def save(self, path: str):
+        torch.save(
+            {
+                "policy_state_dict": self.policy.state_dict(),
+                "pi_optimizer_state_dict": self.pi_optimizer.state_dict(),
+                "q_optimizer_state_dict": self.q_optimizer.state_dict(),
+            },
+            path,
+        )
+
+    def load(self, path: str):
+        checkpoint = torch.load(path)
+        self.policy.load_state_dict(checkpoint["policy_state_dict"])
+        self.pi_optimizer.load_state_dict(checkpoint["pi_optimizer_state_dict"])
+        self.q_optimizer.load_state_dict(checkpoint["q_optimizer_state_dict"])
