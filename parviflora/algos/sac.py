@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
-from tqdm import tqdm, trange
+from tqdm.autonotebook import tqdm, trange
 
 from ..buffers.base_buffer import BaseBuffer
 from ..buffers.replay_buffer import ReplayBuffer
@@ -767,8 +767,10 @@ class SAC:
         torch.save(
             {
                 "policy_state_dict": self.policy.state_dict(),
+                "alpha": self.alpha,
                 "pi_optimizer_state_dict": self.pi_optimizer.state_dict(),
                 "q_optimizer_state_dict": self.q_optimizer.state_dict(),
+                "alpha_optimizer_state_dict": self.alpha_optimizer.state_dict(),
             },
             path,
         )
@@ -778,3 +780,5 @@ class SAC:
         self.policy.load_state_dict(checkpoint["policy_state_dict"])
         self.pi_optimizer.load_state_dict(checkpoint["pi_optimizer_state_dict"])
         self.q_optimizer.load_state_dict(checkpoint["q_optimizer_state_dict"])
+        self.alpha = checkpoint["alpha"]
+        self.alpha_optimizer.load_state_dict(checkpoint["alpha_optimizer_state_dict"])
