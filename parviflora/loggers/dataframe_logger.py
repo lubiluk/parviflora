@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional
 
 import pandas as pd
@@ -9,7 +10,7 @@ class DataframeLogger(BaseLogger):
     def __init__(self) -> None:
         super().__init__()
         self._scalars = {}
-        self._msgs = []
+        self._msgs = {"time": [], "msg": []}
 
     def __enter__(self):
         return self
@@ -18,7 +19,9 @@ class DataframeLogger(BaseLogger):
         pass
 
     def log_msg(self, msg: str) -> None:
-        self._msgs.append(msg)
+        now = datetime.datetime.now()
+        self._msgs["time"].append(now)
+        self._msgs["msg"].append(msg)
 
     def log_scalar(self, name: str, value: float, step: Optional[int] = None) -> None:
         if name not in self._scalars:
@@ -29,3 +32,7 @@ class DataframeLogger(BaseLogger):
     @property
     def scalar_df(self):
         return pd.DataFrame(self._scalars)
+
+    @property
+    def msgs_df(self):
+        return pd.DataFrame(self._msgs)

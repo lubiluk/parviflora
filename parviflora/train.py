@@ -17,64 +17,64 @@ from .loggers.tensorboard_logger import TensorboardLogger
 
 
 def main():
-    logger = TensorboardLogger()
-    logger.open()
+    # logger = TensorboardLogger()
+    # logger.open()
 
-    env = gym.make("Pendulum-v1")
-    policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
-    buffer = ReplayBuffer(env=env, size=20000)
+    # env = gym.make("Pendulum-v1")
+    # policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
+    # buffer = ReplayBuffer(env=env, size=20000)
 
-    algo = SAC(
-        env,
-        policy=policy,
-        buffer=buffer,
-        update_every=1,
-        update_after=100,
-        batch_size=256,
-        alpha="auto",
-        logger=logger,
-    )
+    # algo = SAC(
+    #     env,
+    #     policy=policy,
+    #     buffer=buffer,
+    #     update_every=1,
+    #     update_after=100,
+    #     batch_size=256,
+    #     alpha="auto",
+    #     logger=logger,
+    # )
 
-    def callback(results):
-        print("yay", results)
-        return True
+    # def callback(results):
+    #     print("yay", results)
+    #     return True
 
-    algo.train(n_steps=200, log_interval=10000, callback=callback)
-    env.close()
+    # algo.train(n_steps=200, log_interval=10000, callback=callback)
+    # env.close()
 
-    env = gym.make("Pendulum-v1", render_mode="human")
-    algo.buffer.clear()
-    test_rew, test_ep_len = algo.test(env, n_episodes=5, store_experience=True)
-    print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
-    env.close()
+    # env = gym.make("Pendulum-v1", render_mode="human")
+    # algo.buffer.clear()
+    # test_rew, test_ep_len = algo.test(env, n_episodes=5, store_experience=True)
+    # print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
+    # env.close()
 
-    env = gym.make("Pendulum-v1")
-    policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
-    buffer = ReplayBuffer(env=env, size=20000)
+    # env = gym.make("Pendulum-v1")
+    # policy = MlpPolicy(env.observation_space, env.action_space, hidden_sizes=(256,256), extractor_type=ArrayExtractor)
+    # buffer = ReplayBuffer(env=env, size=20000)
 
-    algo = SAC(
-        env,
-        policy=policy,
-        buffer=buffer,
-        update_every=1,
-        update_after=100,
-        batch_size=256,
-        alpha="auto",
-        logger=logger,
-    )
+    # algo = SAC(
+    #     env,
+    #     policy=policy,
+    #     buffer=buffer,
+    #     update_every=1,
+    #     update_after=100,
+    #     batch_size=256,
+    #     alpha="auto",
+    #     logger=logger,
+    # )
 
-    algo._train_passively(n_steps=20000, log_interval=1000)
-    env.close()
+    # algo._train_passively(n_steps=20000, log_interval=1000)
+    # env.close()
 
-    env = gym.make("Pendulum-v1", render_mode="human")
-    test_rew, test_ep_len = algo.test_passively(env, n_episodes=5)
-    print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
-    env.close()
+    # env = gym.make("Pendulum-v1", render_mode="human")
+    # test_rew, test_ep_len = algo.test_passively(env, n_episodes=5)
+    # print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
+    # env.close()
 
 
-    logger.close()
+    # logger.close()
 
-    return
+    # return
 
     
 
@@ -105,7 +105,7 @@ def main():
     policy = MlpPolicy(
         env.observation_space,
         env.action_space,
-        hidden_sizes=[512, 512, 512],
+        hidden_sizes=[2048, 2048, 2048],
         extractor_type=DictExtractor,
     )
     # policy.load_state_dict(torch.load("data/model_300k_ref.pt", map_location=torch.device('cpu')))
@@ -136,7 +136,7 @@ def main():
         lr=7e-4,
         logger=logger,
         max_episode_len=100,
-        start_steps=300_000
+        start_steps=1_000
     )
     algo.train(n_steps=300_000, log_interval=1000)
     # algo.train_offline(100)
