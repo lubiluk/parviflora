@@ -16,7 +16,6 @@ from ..loggers.base_logger import BaseLogger
 from ..loggers.silent_logger import SilentLogger
 from ..policies.mlp_policy import MlpPolicy
 from ..utils.training import count_vars
-from ..utils.testing import TestResults
 
 
 class TrainingState:
@@ -345,7 +344,7 @@ class SAC:
         store_experience: bool = False,
         render: bool = False,
         up_to_buffer_size=False,
-    ) -> TestResults:
+    ) -> dict:
         ep_returns = []
         ep_lengths = []
         ep_successes = []
@@ -398,16 +397,16 @@ class SAC:
             if up_to_buffer_size and self.buffer.size == self.buffer.max_size:
                 break
 
-        results = TestResults(
-            mean_ep_ret=np.array(ep_returns).mean(),
-            mean_ep_len=np.array(ep_lengths).mean(),
-        )
+        results = {
+            "mean_ep_ret": np.array(ep_returns).mean(),
+            "mean_ep_len": np.array(ep_lengths).mean(),
+        }
 
         if len(ep_successes) > 0:
-            results.success_rate = np.array(ep_successes).mean()
+            results["success_rate"] = np.array(ep_successes).mean()
 
         if render:
-            results.ep_frames = frames
+            results["ep_frames"] = frames
 
         return results
 
@@ -531,9 +530,9 @@ class SAC:
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
                     results = self.test(self.env, self.n_test_episodes)
-                    prgs.set_description(f"test_ep_return {results.mean_ep_ret:.3g}")
-                    self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
-                    self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
+                    prgs.set_description(f"test_ep_return {results['mean_ep_ret']:.3g}")
+                    self.logger.log_scalar("test_ep_return", results["mean_ep_ret"], t)
+                    self.logger.log_scalar("test_ep_length", results["mean_ep_len"], t)
 
                     stop = False
 
@@ -576,11 +575,13 @@ class SAC:
                     # Test the performance of the deterministic version of the agent.
                     results = self.test(self.env, self.n_test_episodes)
 
-                    self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
-                    self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
+                    self.logger.log_scalar("test_ep_return", results["mean_ep_ret"], t)
+                    self.logger.log_scalar("test_ep_length", results["mean_ep_len"], t)
 
                     if prgs is not None:
-                        prgs.set_description(f"test_ep_return {test_ep_ret:.3g}")
+                        prgs.set_description(
+                            f"test_ep_return {results['mean_ep_ret']:.3g}"
+                        )
 
         return self._training_state.test_ep_return
 
@@ -660,7 +661,7 @@ class SAC:
         self.logger.log_scalar("ep_length", ep_len, t)
         self.buffer.end_episode()
 
-    def train_offline(self, n_epochs):
+    def train_offline(self, n_epochs, disable_alpha=True, stochastic=False):
         batch_size = self.batch_size
         n_samples = self.buffer.size
 
@@ -670,6 +671,12 @@ class SAC:
 
         # torch.autograd.set_detect_anomaly(True)
 
+        if disable_alpha:
+            alpha_optim = self.alpha_optimizer
+            alpha = self.alpha
+            self.alpha_optimizer = None
+            self.alpha = 0
+
         with trange(total_steps) as prgs:
             for t in prgs:
                 if t % epoch_steps == 0:
@@ -677,15 +684,23 @@ class SAC:
                     idxs = torch.randperm(n_samples)
                     prgs.set_description(f"Epoch {epoch}")
 
-                start = (t % epoch_steps) * batch_size
-                end = min(start + batch_size, n_samples)
-                batch_idxs = idxs[start:end]
-                batch = self.buffer.batch(batch_idxs)
+                if stochastic:
+                    batch = self.buffer.sample_batch(batch_size)
+                else:
+                    start = (t % epoch_steps) * batch_size
+                    end = min(start + batch_size, n_samples)
+                    batch_idxs = idxs[start:end]
+                    batch = self.buffer.batch(batch_idxs)
+
                 losses = self.update(data=batch)
                 self.logger.log_scalar("loss_q", losses["q"], t)
                 self.logger.log_scalar("loss_pi", losses["pi"], t)
                 self.logger.log_scalar("loss_alpha", losses["alpha"], t)
                 self.logger.log_scalar("alpha", self.alpha, t)
+
+        if disable_alpha:
+            self.alpha_optimizer = alpha_optim
+            self.alpha = alpha
 
     def _train_offline_exact(self, n_steps, log_interval=1000):
         """Reflects 1:1 online learning but is offline"""
@@ -727,9 +742,9 @@ class SAC:
                 if t % log_interval == 0:
                     # Test the performance of the deterministic version of the agent.
                     results = self.test(self.env, self.n_test_episodes)
-                    prgs.set_description(f"test_ep_return {results.mean_ep_ret:.3g}")
-                    self.logger.log_scalar("test_ep_return", results.mean_ep_ret, t)
-                    self.logger.log_scalar("test_ep_length", results.mean_ep_len, t)
+                    prgs.set_description(f"test_ep_return {results['mean_ep_ret']:.3g}")
+                    self.logger.log_scalar("test_ep_return", results["mean_ep_ret"], t)
+                    self.logger.log_scalar("test_ep_length", results["mean_ep_len"], t)
 
         return test_ep_return
 
@@ -737,7 +752,7 @@ class SAC:
         self,
         env: gym.Env,
         n_steps: int,
-    ) -> TestResults:
+    ) -> BaseBuffer:
         # Prepare for interaction with environment
         self.buffer.clear()
         self.policy.eval()
