@@ -48,7 +48,7 @@ class HerReplayBuffer(DictReplayBuffer):
         )
 
         if self._ptr == self.ep_start_ptr:
-            raise "Episode longer than buffer size"
+            raise Exception("Episode longer than buffer size")
 
     def start_episode(self):
         self.ep_start_ptr = self._ptr

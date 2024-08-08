@@ -100,12 +100,12 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    env = gym.make("PandaPush-v3")
+    env = gym.make("PandaReach-v3")
 
     policy = MlpPolicy(
         env.observation_space,
         env.action_space,
-        hidden_sizes=[2048, 2048, 2048],
+        hidden_sizes=[64, 64],
         extractor_type=DictExtractor,
     )
     # policy.load_state_dict(torch.load("data/model_300k_ref.pt", map_location=torch.device('cpu')))
