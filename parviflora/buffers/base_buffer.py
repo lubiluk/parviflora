@@ -26,7 +26,7 @@ class BaseBuffer(ABC):
         self.rewards = torch.zeros(size, dtype=torch.float32, device=device)
         self.terminations = torch.zeros(size, dtype=torch.float32, device=device)
         self.truncations = torch.zeros(size, dtype=torch.float32, device=device)
-        self.infos = np.empty((size, 1), dtype=object)
+        self.infos = np.empty((size, ), dtype=object)
         self._ptr, self.size, self.max_size = 0, 0, size
 
     def store(
