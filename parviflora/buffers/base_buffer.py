@@ -88,17 +88,22 @@ class BaseBuffer(ABC):
     def end_episode(self):
         pass
 
-    def save(self, filepath: Path) -> None:
+    def save(self, filepath: str) -> None:
+        filepath = Path(filepath)
         data_dict = self._observations_for_saving()
         data_dict.update(
             {
-                "action": self.actions[: self.size].cpu().numpy(),
-                "reward": self.rewards[: self.size].cpu().numpy(),
-                "termination": self.terminations[: self.size].cpu().numpy(),
-                "truncation": self.truncations[: self.size].cpu().numpy(),
-                "info": self.infos[: self.size],
+                "action": self.actions.cpu().numpy(),
+                "reward": self.rewards.cpu().numpy(),
+                "termination": self.terminations.cpu().numpy(),
+                "truncation": self.truncations.cpu().numpy(),
+                "info": self.infos,
+                "size": self.size,
+                "max_size": self.max_size,
+                "_ptr": self._ptr,
             }
         )
+        data_dict.update(self._additional_saving_data())
 
         filepath.parent.mkdir(exist_ok=True, parents=True)
         np.savez(filepath, **data_dict)
@@ -107,7 +112,12 @@ class BaseBuffer(ABC):
     def _observations_for_saving(self) -> dict[str, NDArray]:
         ...
 
-    def load(self, filepath: Path) -> None:
+    @abstractmethod
+    def _additional_saving_data(self) -> dict[str, Any]:
+        ...
+
+    def load(self, filepath: str) -> None:
+        filepath = Path(filepath)
         data_dict: dict[str, NDArray] = np.load(filepath, allow_pickle=True)
 
         self._load_observations(data_dict)
@@ -124,16 +134,23 @@ class BaseBuffer(ABC):
             data_dict["truncation"], dtype=torch.float32, device=self.device
         )
         self.infos = data_dict["info"]
-        self.max_size = self.size = len(self.rewards)
+        self.size = data_dict["size"].item()
+        self.max_size = data_dict["max_size"].item()
+        self._ptr = data_dict["_ptr"].item()
+        self._load_additional_data(data_dict)
+
 
     @abstractmethod
     def _load_observations(self, data_dict: dict[str, NDArray]) -> None:
         ...
 
+    def _load_additional_data(self, data_dict: dict[str, Any]) -> None:
+        ...
+
     def clear(self):
-        self.actions = torch.zeros_like(self.actions)
-        self.rewards = torch.zeros_like(self.rewards)
-        self.terminations = torch.zeros_like(self.terminations)
-        self.truncations = torch.zeros_like(self.truncations)
-        self.infos = np.empty_like(self.infos)
+        self.actions.zero_()
+        self.rewards.zero_()
+        self.terminations.zero_()
+        self.truncations.zero_()
+        self.infos.fill(None)
         self._ptr, self.size = 0, 0

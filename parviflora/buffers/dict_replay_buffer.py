@@ -55,12 +55,12 @@ class DictReplayBuffer(BaseBuffer):
 
     def _observations_for_saving(self) -> Tuple[list[str], list[NDArray]]:
         data_dict = {
-            f"observation[{k}]": v[: self.size].cpu().numpy()
+            f"observation[{k}]": v.cpu().numpy()
             for k, v in self.observations.items()
         }
         data_dict.update(
             {
-                f"next_observation[{k}]": v[: self.size].cpu().numpy()
+                f"next_observation[{k}]": v.cpu().numpy()
                 for k, v in self.next_observations.items()
             }
         )
