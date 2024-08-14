@@ -89,7 +89,7 @@ class BaseBuffer(ABC):
         pass
 
     def save(self, filepath: str) -> None:
-        filepath = Path(filepath)
+        path = Path(filepath)
         data_dict = self._observations_for_saving()
         data_dict.update(
             {
@@ -105,16 +105,15 @@ class BaseBuffer(ABC):
         )
         data_dict.update(self._additional_saving_data())
 
-        filepath.parent.mkdir(exist_ok=True, parents=True)
-        np.savez(filepath, **data_dict)
+        path.parent.mkdir(exist_ok=True, parents=True)
+        np.savez(path, **data_dict)
 
     @abstractmethod
     def _observations_for_saving(self) -> dict[str, NDArray]:
         ...
 
-    @abstractmethod
     def _additional_saving_data(self) -> dict[str, Any]:
-        ...
+        return {}
 
     def load(self, filepath: str) -> None:
         filepath = Path(filepath)
