@@ -54,7 +54,7 @@ class SAC:
         start_steps=10000,
         update_after=1000,
         update_every=50,
-        n_test_episodes=10,
+        n_test_episodes=25,
         max_episode_len=1000,
         n_updates=None,
         logger: BaseLogger = SilentLogger(),
