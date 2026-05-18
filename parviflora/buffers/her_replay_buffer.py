@@ -74,9 +74,9 @@ class HerReplayBuffer(DictReplayBuffer):
         ep_len = len(ep["reward"])
 
         for idx in range(ep_len):
-            observation = {k: v[idx] for k, v in ep["observation"].items()} 
+            observation = {k: v[idx] for k, v in ep["observation"].items()}
             action = ep["action"][idx]
-            next_observation = {k: v[idx] for k, v in ep["next_observation"].items()} 
+            next_observation = {k: v[idx] for k, v in ep["next_observation"].items()}
             info = ep["info"][idx]
             np_agoal = next_observation["achieved_goal"].cpu().numpy()
 
@@ -98,7 +98,7 @@ class HerReplayBuffer(DictReplayBuffer):
                     )
 
                 sel_agoal = ep["next_observation"]["achieved_goal"][sel_idx]
-                info = ep["info"][sel_idx][0]
+                info = ep["info"][sel_idx]
                 terminated = ep["terminated"][sel_idx]
                 truncated = ep["truncated"][sel_idx]
                 np_sel_agoal = sel_agoal.cpu().numpy()

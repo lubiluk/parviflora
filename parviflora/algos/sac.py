@@ -202,9 +202,9 @@ class SAC:
             init_value = 1.0
             if "_" in self.alpha:
                 init_value = float(self.alpha.split("_")[1])
-                assert (
-                    init_value > 0.0
-                ), "The initial value of alpha must be greater than 0"
+                assert init_value > 0.0, (
+                    "The initial value of alpha must be greater than 0"
+                )
 
             # Note: we optimize the log of the entropy coeff which is slightly different from the paper
             # as discussed in https://github.com/rail-berkeley/softlearning/issues/37
@@ -222,6 +222,26 @@ class SAC:
             self.alpha = torch.tensor(
                 float(self.alpha), dtype=torch.float32, device=alpha_device
             )
+
+    @staticmethod
+    def _goal_distance_from_observation(obs) -> Optional[float]:
+        """Extract ‖achieved_goal - desired_goal‖ when available."""
+        if not isinstance(obs, dict):
+            return None
+
+        achieved_goal = obs.get("achieved_goal")
+        desired_goal = obs.get("desired_goal")
+
+        if achieved_goal is None or desired_goal is None:
+            return None
+
+        achieved_goal = np.asarray(achieved_goal, dtype=np.float32)
+        desired_goal = np.asarray(desired_goal, dtype=np.float32)
+
+        if achieved_goal.shape != desired_goal.shape:
+            return None
+
+        return float(np.linalg.norm(achieved_goal - desired_goal))
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(self, data):
@@ -348,6 +368,8 @@ class SAC:
         ep_returns = []
         ep_lengths = []
         ep_successes = []
+        ep_final_goal_dists = []
+        ep_min_goal_dists = []
         self.policy.eval()
 
         if render:
@@ -355,6 +377,7 @@ class SAC:
 
         for _ in range(n_episodes):
             (o, i), d, ep_ret, ep_len = env.reset(), False, 0, 0
+            min_goal_dist = self._goal_distance_from_observation(o)
 
             if store_experience:
                 self.buffer.start_episode()
@@ -373,6 +396,11 @@ class SAC:
                     self.buffer.store(o, a, r, o2, ter, tru, i)
 
                 o = o2
+
+                current_goal_dist = self._goal_distance_from_observation(o)
+                if current_goal_dist is not None:
+                    if min_goal_dist is None or current_goal_dist < min_goal_dist:
+                        min_goal_dist = current_goal_dist
 
                 if render:
                     frame = env.render()
@@ -394,6 +422,12 @@ class SAC:
             if "is_success" in i:
                 ep_successes.append(i["is_success"])
 
+            final_goal_dist = self._goal_distance_from_observation(o)
+            if final_goal_dist is not None:
+                ep_final_goal_dists.append(final_goal_dist)
+            if min_goal_dist is not None:
+                ep_min_goal_dists.append(min_goal_dist)
+
             if up_to_buffer_size and self.buffer.size == self.buffer.max_size:
                 break
 
@@ -404,6 +438,12 @@ class SAC:
 
         if len(ep_successes) > 0:
             results["success_rate"] = np.array(ep_successes).mean()
+
+        if len(ep_final_goal_dists) > 0:
+            results["mean_final_goal_dist"] = np.array(ep_final_goal_dists).mean()
+
+        if len(ep_min_goal_dists) > 0:
+            results["mean_min_goal_dist"] = np.array(ep_min_goal_dists).mean()
 
         if render:
             results["ep_frames"] = frames
@@ -533,6 +573,23 @@ class SAC:
                     prgs.set_description(f"test_ep_return {results['mean_ep_ret']:.3g}")
                     self.logger.log_scalar("test_ep_return", results["mean_ep_ret"], t)
                     self.logger.log_scalar("test_ep_length", results["mean_ep_len"], t)
+
+                    if "success_rate" in results:
+                        self.logger.log_scalar(
+                            "test_success_rate", results["success_rate"], t
+                        )
+
+                    if "mean_final_goal_dist" in results:
+                        self.logger.log_scalar(
+                            "test_mean_final_goal_dist",
+                            results["mean_final_goal_dist"],
+                            t,
+                        )
+
+                    if "mean_min_goal_dist" in results:
+                        self.logger.log_scalar(
+                            "test_mean_min_goal_dist", results["mean_min_goal_dist"], t
+                        )
 
                     stop = False
 

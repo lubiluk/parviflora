@@ -1,8 +1,8 @@
 from pathlib import Path
 
 import gymnasium as gym
-import torch
 import panda_gym
+import torch
 
 from parviflora.policies.mlp_policy import MlpPolicy
 
@@ -71,12 +71,9 @@ def main():
     # print(f"Test reward {test_rew}, Test episode length: {test_ep_len}")
     # env.close()
 
-
     # logger.close()
 
     # return
-
-    
 
     # env = BitFlippingEnv(n_bits=15, continuous=True, max_steps=15)
     # ac_kwargs = dict(hidden_sizes=[64, 64], extractor_type=DictExtractor)
@@ -105,7 +102,7 @@ def main():
     policy = MlpPolicy(
         env.observation_space,
         env.action_space,
-        hidden_sizes=[64, 64],
+        hidden_sizes=[256, 256],
         extractor_type=DictExtractor,
     )
     # policy.load_state_dict(torch.load("data/model_300k_ref.pt", map_location=torch.device('cpu')))
@@ -113,7 +110,7 @@ def main():
 
     buffer = HerReplayBuffer(
         env=env,
-        size=300_000*5,
+        size=300_000 * 5,
         n_sampled_goal=4,
         goal_selection_strategy="future",
         device=device,
@@ -136,7 +133,7 @@ def main():
         lr=7e-4,
         logger=logger,
         max_episode_len=100,
-        start_steps=1_000
+        start_steps=1_000,
     )
     algo.train(n_steps=300_000, log_interval=1000)
     # algo.train_offline(100)
