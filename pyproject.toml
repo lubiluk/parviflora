@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "parviflora"
+version = "0.1.0"
+description = "RL"
+authors = [{ name = "Paul Gajewski" }]
+requires-python = ">=3.11"
+dependencies = [
+    "gymnasium",
+    "numpy",
+    "torch",
+    "tqdm",
+    "tensorboard",
+    "wandb",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["parviflora"]
