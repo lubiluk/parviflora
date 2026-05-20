@@ -17,7 +17,7 @@ import torch
 from parviflora.algos.sac import SAC
 from parviflora.buffers.her_replay_buffer import HerReplayBuffer
 from parviflora.extractors.dict_extractor import DictExtractor
-from parviflora.loggers.tensorboard_logger import TensorboardLogger
+from parviflora.loggers.wandb_logger import WandbLogger
 from parviflora.policies.mlp_policy import MlpPolicy
 
 ENV_ID = "FetchPush-v4"
@@ -27,7 +27,7 @@ SAVE_PATH = Path("data/checkpoint_fetch_push_mlp.pt")
 
 
 def main():
-    device = torch.device("cpu")
+    device = torch.device("cuda")
 
     env = gym.make(ENV_ID)
 
@@ -47,7 +47,7 @@ def main():
         device=device,
     )
 
-    logger = TensorboardLogger()
+    logger = WandbLogger()
     logger.open()
 
     algo = SAC(
