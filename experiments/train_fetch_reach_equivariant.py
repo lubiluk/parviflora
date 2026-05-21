@@ -38,7 +38,7 @@ import torch
 
 from parviflora.algos.sac import SAC
 from parviflora.buffers.her_replay_buffer import HerReplayBuffer
-from parviflora.loggers.tensorboard_logger import TensorboardLogger
+from parviflora.loggers.wandb_logger import WandbLogger
 from parviflora.policies.equivariant_policy import EquivariantPolicy
 
 ENV_ID = "FetchReach-v4"
@@ -68,7 +68,7 @@ def main():
         device=device,
     )
 
-    logger = TensorboardLogger()
+    logger = WandbLogger(name="reach-equivariant")
     logger.open()
 
     algo = SAC(

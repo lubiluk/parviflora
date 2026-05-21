@@ -7,7 +7,7 @@ import torch
 from parviflora.algos.sac import SAC
 from parviflora.buffers.her_replay_buffer import HerReplayBuffer
 from parviflora.extractors.dict_extractor import DictExtractor
-from parviflora.loggers.tensorboard_logger import TensorboardLogger
+from parviflora.loggers.wandb_logger import WandbLogger
 from parviflora.policies.mlp_policy import MlpPolicy
 
 
@@ -31,7 +31,7 @@ def main():
         goal_selection_strategy="future",
         device=device,
     )
-    logger = TensorboardLogger()
+    logger = WandbLogger(name="panda-reg")
     logger.open()
 
     algo = SAC(

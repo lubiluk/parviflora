@@ -1,13 +1,14 @@
 """
-FetchReach-v4  —  MLP + HER baseline (SAC)
+FetchPickAndPlace-v4  —  MLP + HER baseline (SAC)
 
-Identical hyperparameters to train_fetch_reach_equivariant.py so the two
-runs can be compared directly.
+Identical hyperparameters to train_fetch_pick_and_place_equivariant.py for a
+direct comparison.  The MLP must learn translation and rotation invariance,
+grasping, and 3-D placement purely from data.
 
-Policy:  MlpPolicy  [64 × 64]  with DictExtractor
-         Flattens the full goal-conditioned observation dict and processes
-         it through a standard MLP. Translation/rotation invariance must
-         be learned from data.
+Key differences from FetchPush-v4:
+  • block_gripper=False  — gripper action (dim 3) is active and essential
+  • target_in_the_air=True  — goal z can be above the table (pick & lift)
+  • Task is strictly harder: robot must grasp the object before placing it
 """
 
 from pathlib import Path
@@ -25,34 +26,34 @@ from parviflora.extractors.dict_extractor import DictExtractor
 from parviflora.loggers.wandb_logger import WandbLogger
 from parviflora.policies.mlp_policy import MlpPolicy
 
-ENV_ID = "FetchReach-v4"
-N_STEPS = 30_000
+ENV_ID = "FetchPickAndPlace-v4"
+N_STEPS = 1_000_000
 LOG_INTERVAL = 1_000
-SAVE_PATH = Path("data/checkpoint_fetch_reach_mlp.pt")
+SAVE_PATH = Path("data/checkpoint_fetch_pick_and_place_mlp.pt")
 
 
 def main():
-    device = torch.device("cpu")
+    device = torch.device("cuda")
 
     env = gym.make(ENV_ID)
 
     policy = MlpPolicy(
         env.observation_space,
         env.action_space,
-        hidden_sizes=[64, 64],
+        hidden_sizes=[512, 512, 512],
         extractor_type=DictExtractor,
     )
     policy.to(device)
 
     buffer = HerReplayBuffer(
         env=env,
-        size=N_STEPS * 5,
+        size=N_STEPS,
         n_sampled_goal=4,
         goal_selection_strategy="future",
         device=device,
     )
 
-    logger = WandbLogger(name="reach-mlp")
+    logger = WandbLogger(name="pick-and-place-mlp")
     logger.open()
 
     algo = SAC(
@@ -61,12 +62,12 @@ def main():
         buffer=buffer,
         update_every=1,
         update_after=1_000,
-        batch_size=256,
+        batch_size=1048,
         alpha="auto",
-        gamma=0.99,
-        lr=7e-4,
+        gamma=0.95,
+        lr=1e-3,
         logger=logger,
-        max_episode_len=100,
+        max_episode_len=50,
         start_steps=1_000,
     )
 

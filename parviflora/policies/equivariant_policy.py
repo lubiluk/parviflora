@@ -383,6 +383,7 @@ class EquivariantPolicy(nn.Module):
         extractor_type: type = EquivariantReachExtractor,
         n_scalars: int = 16,
         n_vectors: int = 8,
+        critic_hidden_sizes: tuple = (64, 64),
         clip_action: bool = True,
     ) -> None:
         super().__init__()
@@ -392,8 +393,8 @@ class EquivariantPolicy(nn.Module):
         extractor = extractor_type(observation_space)
 
         self.pi = EquivariantSACActor(extractor, self.act_limit, n_scalars, n_vectors)
-        self.q1 = InvariantMLPQFunction(extractor)
-        self.q2 = InvariantMLPQFunction(extractor)
+        self.q1 = InvariantMLPQFunction(extractor, hidden_sizes=critic_hidden_sizes)
+        self.q2 = InvariantMLPQFunction(extractor, hidden_sizes=critic_hidden_sizes)
 
     def act(
         self,

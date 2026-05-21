@@ -1,32 +1,34 @@
 """
-FetchPush-v4  —  Equivariant policy + HER (SAC)
+FetchPickAndPlace-v4  —  Equivariant policy + HER (SAC)
 
-Identical hyperparameters to train_fetch_push_mlp.py for a direct comparison.
+Identical hyperparameters to train_fetch_pick_and_place_mlp.py for a direct
+comparison.
 
-Policy:  EquivariantPushPolicy  [16 scalars × 8 vectors per hidden layer]
+Policy:  EquivariantPolicy with EquivariantPushExtractor
+         The observation layout for PickAndPlace is identical to Push (same
+         25-dim vector), so the extractor is reused without modification.
+
+  What changes vs Push
+  ─────────────────────
+  • block_gripper=False: the gripper action (dim 3, scalar) is now critical.
+    The actor already treats it as an independent scalar; no architecture
+    change is needed.
+  • target_in_the_air=True: goals can have arbitrary z.  The error_vec
+    (desired_goal − object_pos) is still a polar vector — it just now also
+    has a non-zero z component.  Equivariance handles this automatically.
+  • Task is harder: more capacity is appropriate.
+    n_scalars=32, n_vectors=16 (vs 16/8 for Push),
+    critic_hidden_sizes=(256, 256) (vs 64/64 for Push).
 
   What's encoded by construction
   ────────────────────────────────
-  • Translation invariance: error_vec = goal − object_pos, and
-    grip_to_obj = object_pos − grip_pos are differences of positions.
-    No absolute coordinates appear in the feature vector.
-
-  • SO(3) equivariance: the actor maps equivariant features to an
-    equivariant action. Rotating the scene rotates the output action
-    by the same amount. The Q-function maps to an invariant scalar.
-
-  • Scalar gate conditioning fix: the 4 vector channels produce
-    10 invariant scalars (4 norms + 6 pairwise dot products) that are
-    prepended as 0e features so the LinearBlock gates can depend on
+  • Translation invariance: error_vec = goal − object_pos,
+    grip_to_obj = object_pos − grip_pos — no absolute positions.
+  • SO(3) equivariance: rotating the scene rotates the action vector
+    by the same amount; Q-values are rotation-invariant.
+  • Scalar gate conditioning: 10 invariant scalars (4 norms + 6 pairwise
+    dots of the 4 vector channels) let the LinearBlock gates depend on
     distance-to-goal, gripper-object distance, and velocity alignments.
-    Without this, the actor collapses to a fixed-gain controller.
-
-  Key geometric features for Push
-  ─────────────────────────────────
-    dot(error_vec, grip_to_obj) < 0  ←→  gripper is behind the object
-                                          relative to the goal (push side)
-    dot(error_vec, object_velp) > 0  ←→  object is moving toward the goal
-    dot(grip_to_obj, act_xyz)   > 0  ←→  action moves gripper toward object
 """
 
 from pathlib import Path
@@ -44,10 +46,10 @@ from parviflora.extractors.equivariant_push_extractor import EquivariantPushExtr
 from parviflora.loggers.wandb_logger import WandbLogger
 from parviflora.policies.equivariant_policy import EquivariantPolicy
 
-ENV_ID = "FetchPush-v4"
-N_STEPS = 500_000
+ENV_ID = "FetchPickAndPlace-v4"
+N_STEPS = 1_000_000
 LOG_INTERVAL = 1_000
-SAVE_PATH = Path("data/checkpoint_fetch_push_equivariant.pt")
+SAVE_PATH = Path("data/checkpoint_fetch_pick_and_place_equivariant.pt")
 
 
 def main():
@@ -59,20 +61,22 @@ def main():
         env.observation_space,
         env.action_space,
         extractor_type=EquivariantPushExtractor,
-        n_scalars=16,
-        n_vectors=8,
+        # Larger capacity than Push: grasping + 3-D placement is harder
+        n_scalars=32,
+        n_vectors=16,
+        critic_hidden_sizes=(256, 256),
     )
     policy.to(device)
 
     buffer = HerReplayBuffer(
         env=env,
-        size=N_STEPS * 5,
+        size=N_STEPS,
         n_sampled_goal=4,
         goal_selection_strategy="future",
         device=device,
     )
 
-    logger = WandbLogger(name="push-equivariant")
+    logger = WandbLogger(name="pick-and-place-equivariant")
     logger.open()
 
     algo = SAC(
@@ -81,14 +85,13 @@ def main():
         buffer=buffer,
         update_every=1,
         update_after=1_000,
-        batch_size=256,
+        batch_size=1048,
         alpha="auto",
-        # Lower target entropy to account for the isotropic Gaussian constraint:
-        # one sigma_xyz for all 3 spatial dims gives fewer entropy degrees of
-        # freedom than the MLP's 4 independent Gaussians.
+        # Lower target entropy for the isotropic Gaussian constraint
+        # (one sigma_xyz for all 3 spatial dims).
         target_entropy=-1.5,
-        gamma=0.99,
-        lr=7e-4,
+        gamma=0.95,
+        lr=1e-3,
         logger=logger,
         max_episode_len=50,
         start_steps=1_000,

@@ -47,7 +47,7 @@ def main():
         device=device,
     )
 
-    logger = WandbLogger()
+    logger = WandbLogger(name="push-mlp")
     logger.open()
 
     algo = SAC(
